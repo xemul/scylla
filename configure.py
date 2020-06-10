@@ -390,6 +390,7 @@ scylla_tests = set([
     'test/boost/vint_serialization_test',
     'test/boost/virtual_reader_test',
     'test/boost/bptree_test',
+    'test/boost/btree_test',
     'test/boost/double_decker_test',
     'test/manual/ec2_snitch_test',
     'test/manual/gce_snitch_test',
@@ -416,7 +417,9 @@ scylla_tests = set([
     'test/unit/row_cache_alloc_stress_test',
     'test/unit/row_cache_stress_test',
     'test/unit/bptree_stress_test',
+    'test/unit/btree_stress_test',
     'test/unit/bptree_compaction_test',
+    'test/unit/btree_compaction_test',
 ])
 
 perf_tests = set([
@@ -967,6 +970,7 @@ pure_boost_tests = set([
     'test/boost/top_k_test',
     'test/boost/vint_serialization_test',
     'test/boost/bptree_test',
+    'test/boost/btree_test',
     'test/manual/streaming_histogram_test',
 ])
 
@@ -986,7 +990,9 @@ tests_not_using_seastar_test_framework = set([
     'test/unit/lsa_sync_eviction_test',
     'test/unit/row_cache_alloc_stress_test',
     'test/unit/bptree_stress_test',
+    'test/unit/btree_stress_test',
     'test/unit/bptree_compaction_test',
+    'test/unit/btree_compaction_test',
     'test/manual/sstable_scan_footprint_test',
 ]) | pure_boost_tests
 
