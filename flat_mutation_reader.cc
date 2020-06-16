@@ -401,12 +401,13 @@ flat_mutation_reader_from_mutations(reader_permit permit, std::vector<mutation> 
     private:
         void prepare_next_clustering_row() {
             auto& crs = _cur->partition().clustered_rows();
+            auto deleter = current_deleter<rows_entry>();
             while (true) {
-                auto re = crs.unlink_leftmost_without_rebalance();
-                if (!re) {
+                auto re = crs.begin();
+                if (re == crs.end()) {
                     break;
                 }
-                auto re_deleter = defer([re] { current_deleter<rows_entry>()(re); });
+                auto re_eraser = defer([&] { crs.erase_and_dispose(re, deleter); });
                 if (!re->dummy()) {
                     _cr = mutation_fragment(*_schema, _permit, std::move(*re));
                     break;
