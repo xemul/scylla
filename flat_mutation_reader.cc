@@ -402,12 +402,13 @@ flat_mutation_reader_from_mutations(std::vector<mutation> mutations, const dht::
     private:
         void prepare_next_clustering_row() {
             auto& crs = _cur->partition().clustered_rows();
+            auto deleter = current_deleter<rows_entry>();
             while (true) {
-                auto re = crs.unlink_leftmost_without_rebalance();
-                if (!re) {
+                auto re = crs.begin();
+                if (re == crs.end()) {
                     break;
                 }
-                auto re_deleter = defer([re] { current_deleter<rows_entry>()(re); });
+                auto re_eraser = defer([&] { crs.erase_and_dispose(re, deleter); });
                 if (!re->dummy()) {
                     _cr = mutation_fragment(std::move(*re));
                     break;
