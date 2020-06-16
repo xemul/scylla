@@ -325,16 +325,17 @@ stop_iteration mutation_partition::apply_monotonically(const schema& s, mutation
     }
 
     rows_entry::compare less(s);
+    rows_entry::tri_compare cmp(s);
     auto del = current_deleter<rows_entry>();
     auto p_i = p._rows.begin();
     auto i = _rows.begin();
     while (p_i != p._rows.end()) {
       try {
         rows_entry& src_e = *p_i;
-        if (i != _rows.end() && less(*i, src_e)) {
+        if (i != _rows.end() && cmp(*i, src_e) < 0) {
             i = _rows.lower_bound(src_e, less);
         }
-        if (i == _rows.end() || less(src_e, *i)) {
+        if (i == _rows.end() || cmp(src_e, *i) < 0) {
             p_i = p._rows.erase(p_i);
             auto src_i = _rows.insert_before(i, src_e);
             // When falling into a continuous range, preserve continuity.
@@ -2384,19 +2385,20 @@ void mutation_partition::make_fully_continuous() {
 
 void mutation_partition::set_continuity(const schema& s, const position_range& pr, is_continuous cont) {
     auto less = rows_entry::compare(s);
+    auto cmp = rows_entry::tri_compare(s);
 
-    if (!less(pr.start(), pr.end())) {
+    if (cmp(pr.start(), pr.end()) >= 0) {
         return; // empty range
     }
 
     auto end = _rows.lower_bound(pr.end(), less);
-    if (end == _rows.end() || less(pr.end(), end->position())) {
+    if (end == _rows.end() || cmp(pr.end(), end->position()) < 0) {
         end = _rows.insert_before(end, *current_allocator().construct<rows_entry>(s, pr.end(), is_dummy::yes,
             end == _rows.end() ? is_continuous::yes : end->continuous()));
     }
 
     auto i = _rows.lower_bound(pr.start(), less);
-    if (less(pr.start(), i->position())) {
+    if (cmp(pr.start(), i->position()) < 0) {
         i = _rows.insert_before(i, *current_allocator().construct<rows_entry>(s, pr.start(), is_dummy::yes, i->continuous()));
     }
 
@@ -2469,9 +2471,10 @@ bool
 mutation_partition::check_continuity(const schema& s, const position_range& r, is_continuous cont) const {
     check_schema(s);
     auto less = rows_entry::compare(s);
+    auto cmp = rows_entry::tri_compare(s);
     auto i = _rows.lower_bound(r.start(), less);
     auto end = _rows.lower_bound(r.end(), less);
-    if (!less(r.start(), r.end())) {
+    if (cmp(r.start(), r.end()) >= 0) {
         return bool(cont);
     }
     if (i != end) {
