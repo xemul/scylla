@@ -468,11 +468,8 @@ flat_mutation_reader_from_mutations(std::vector<mutation> mutations, const dht::
         }
         void destroy_current_mutation() {
             auto &crs = _cur->partition().clustered_rows();
-            auto re = crs.unlink_leftmost_without_rebalance();
-            while (re) {
-                current_deleter<rows_entry>()(re);
-                re = crs.unlink_leftmost_without_rebalance();
-            }
+            auto deleter = current_deleter<rows_entry>();
+            crs.clear_and_dispose(deleter);
 
             auto &rts = _cur->partition().row_tombstones().tombstones();
             auto rt = rts.unlink_leftmost_without_rebalance();
