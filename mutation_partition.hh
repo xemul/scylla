@@ -44,7 +44,7 @@
 #include "hashing_partition_visitor.hh"
 #include "range_tombstone_list.hh"
 #include "clustering_key_filter.hh"
-#include "intrusive_set_external_comparator.hh"
+#include "utils/intrusive-rbtree.hh"
 #include "utils/preempt.hh"
 #include "utils/managed_ref.hh"
 
@@ -1026,7 +1026,7 @@ class cache_tracker;
 class rows_entry {
     using lru_link_type = bi::list_member_hook<bi::link_mode<bi::auto_unlink>>;
     friend class size_calculator;
-    intrusive_set_external_comparator_member_hook _link;
+    intrusive_rb::member_hook _link;
     clustering_key _key;
     deletable_row _row;
     lru_link_type _lru_link;
@@ -1042,7 +1042,7 @@ class rows_entry {
         flags() : _before_ck(0), _after_ck(0), _continuous(true), _dummy(false), _last_dummy(false) { }
     } _flags{};
 public:
-    using container_type = intrusive_set_external_comparator<rows_entry, &rows_entry::_link>;
+    using container_type = intrusive_rb::tree<rows_entry, &rows_entry::_link>;
     using lru_type = bi::list<rows_entry,
         bi::member_hook<rows_entry, rows_entry::lru_link_type, &rows_entry::_lru_link>,
         bi::constant_time_size<false>>; // we need this to have bi::auto_unlink on hooks.
