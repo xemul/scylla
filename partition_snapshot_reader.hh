@@ -55,7 +55,7 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
     // allocation section retry (_clustering_rows).
     class lsa_partition_reader {
         const schema& _schema;
-        rows_entry::compare _less;
+        rows_entry::tri_compare _cmp;
         position_in_partition::equal_compare _eq;
         heap_compare _heap_cmp;
 
@@ -93,7 +93,7 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
                 auto cr_end = v.partition().upper_bound(_schema, ck_range);
                 auto cr = [&] () -> mutation_partition::rows_type::const_iterator {
                     if (last_row) {
-                        return v.partition().clustered_rows().upper_bound(*last_row, _less);
+                        return v.partition().clustered_rows().upper_bound(*last_row, _cmp);
                     } else {
                         return v.partition().lower_bound(_schema, ck_range);
                     }
@@ -131,7 +131,7 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
                                       logalloc::region& region, logalloc::allocating_section& read_section,
                                       bool digest_requested)
             : _schema(s)
-            , _less(s)
+            , _cmp(s)
             , _eq(s)
             , _heap_cmp(s)
             , _snapshot(std::move(snp))
