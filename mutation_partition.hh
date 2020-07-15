@@ -44,7 +44,7 @@
 #include "hashing_partition_visitor.hh"
 #include "range_tombstone_list.hh"
 #include "clustering_key_filter.hh"
-#include "intrusive_set_external_comparator.hh"
+#include "utils/intrusive_btree.hh"
 #include "utils/preempt.hh"
 #include "utils/managed_ref.hh"
 
@@ -1010,7 +1010,7 @@ class rows_entry {
     using lru_link_type = bi::list_member_hook<bi::link_mode<bi::auto_unlink>>;
     friend class cache_tracker;
     friend class size_calculator;
-    intrusive_set_external_comparator_member_hook _link;
+    intrusive_b::member_hook _link;
     clustering_key _key;
     deletable_row _row;
     lru_link_type _lru_link;
@@ -1193,7 +1193,7 @@ struct mutation_application_stats {
 // in the doc in partition_version.hh.
 class mutation_partition final {
 public:
-    using rows_type = intrusive_set_external_comparator<rows_entry, &rows_entry::_link>;
+    using rows_type = intrusive_b::tree<rows_entry, &rows_entry::_link, rows_entry::tri_compare, 12, 20, intrusive_b::key_search::linear>;
     friend class rows_entry;
     friend class size_calculator;
 private:
