@@ -35,13 +35,10 @@ struct key_compare {
 
 #include "utils/bptree.hh"
 
-using namespace bplus;
 using namespace seastar;
 
-constexpr int TEST_NODE_SIZE = 4;
-
-/* On node size 32 (this test) linear search works better */
-using test_tree = tree<per_key_t, unsigned long, key_compare, TEST_NODE_SIZE, key_search::linear>;
+/* On node size 32 and less linear search works better */
+using test_bplus_tree = bplus::tree<per_key_t, unsigned long, key_compare, 4, bplus::key_search::linear>;
 
 class collection_tester {
 public:
@@ -54,7 +51,7 @@ public:
 };
 
 class bptree_tester : public collection_tester {
-    test_tree _t;
+    test_bplus_tree _t;
 public:
     bptree_tester() : _t(key_compare{}) {}
     virtual void insert(per_key_t k) override { _t.emplace(k, 0); }
