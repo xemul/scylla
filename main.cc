@@ -486,6 +486,7 @@ int main(int ac, char** av) {
     utils::directories dirs;
     sharded<gms::feature_service> feature_service;
     sharded<db::snapshot_ctl> snapshot_ctl;
+    sharded<netw::messaging_service> messaging;
 
     return app.run(ac, av, [&] () -> future<int> {
 
@@ -514,7 +515,7 @@ int main(int ac, char** av) {
 
         return seastar::async([cfg, ext, &db, &qp, &proxy, &mm, &mm_notifier, &ctx, &opts, &dirs,
                 &prometheus_server, &cf_cache_hitrate_calculator, &load_meter, &feature_service,
-                &token_metadata, &snapshot_ctl] {
+                &token_metadata, &snapshot_ctl, &messaging] {
           try {
             ::stop_signal stop_signal; // we can move this earlier to support SIGINT during initialization
             read_config(opts, *cfg).get();
@@ -769,8 +770,7 @@ int main(int ac, char** av) {
             scfg.streaming = dbcfg.streaming_scheduling_group;
             scfg.gossip = scheduling_group();
 
-            sharded<netw::messaging_service>& messaging = netw::get_messaging_service();
-
+            netw::debug::set_messaging_service(messaging);
             netw::init_messaging_service(messaging, std::move(mscfg), std::move(scfg), trust_store, cert, key, prio, clauth);
             auto stop_ms = defer_verbose_shutdown("messaging service", [&messaging] {
                 netw::uninit_messaging_service(messaging).get();

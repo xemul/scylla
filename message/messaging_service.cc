@@ -1435,4 +1435,13 @@ future<> uninit_messaging_service(sharded<messaging_service>& ms) {
     return ms.invoke_on_all(&messaging_service::stop);
 }
 
+namespace debug {
+static sharded<messaging_service>* _the_messaging_service;
+
+void set_messaging_service(sharded<messaging_service>& ms) noexcept {
+    _the_messaging_service = &ms;
+}
+
+}
+
 } // namespace net

@@ -21,12 +21,16 @@
 
 #pragma once
 
+#include <seastar/core/sharded.hh>
+
 namespace netw {
 
 struct msg_addr;
 enum class messaging_verb;
 class messaging_service;
 
-messaging_service& get_local_messaging_service();
+namespace debug {
+void set_messaging_service(seastar::sharded<messaging_service>&) noexcept;
+}
 
 }
