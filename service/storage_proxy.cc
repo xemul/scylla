@@ -219,11 +219,10 @@ public:
     virtual future<> apply_remotely(storage_proxy& sp, gms::inet_address ep, std::vector<gms::inet_address>&& forward,
             storage_proxy::response_id_type response_id, storage_proxy::clock_type::time_point timeout,
             tracing::trace_state_ptr tr_state) override {
-        auto& ms = netw::get_local_messaging_service();
         auto m = _mutations[ep];
         if (m) {
             tracing::trace(tr_state, "Sending a mutation to /{}", ep);
-            return ms.send_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *m,
+            return sp._messaging.send_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *m,
                                     std::move(forward), utils::fb_utilities::get_broadcast_address(), this_shard_id(),
                                     response_id, tracing::make_trace_info(tr_state));
         }
@@ -269,8 +268,7 @@ public:
             storage_proxy::response_id_type response_id, storage_proxy::clock_type::time_point timeout,
             tracing::trace_state_ptr tr_state) override {
         tracing::trace(tr_state, "Sending a mutation to /{}", ep);
-        auto& ms = netw::get_local_messaging_service();
-        return ms.send_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *_mutation,
+        return sp._messaging.send_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *_mutation,
                 std::move(forward), utils::fb_utilities::get_broadcast_address(), this_shard_id(),
                 response_id, tracing::make_trace_info(tr_state));
     }
@@ -299,8 +297,7 @@ public:
             storage_proxy::response_id_type response_id, storage_proxy::clock_type::time_point timeout,
             tracing::trace_state_ptr tr_state) override {
         tracing::trace(tr_state, "Sending a hint to /{}", ep);
-        auto& ms = netw::get_local_messaging_service();
-        return ms.send_hint_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *_mutation,
+        return sp._messaging.send_hint_mutation(netw::messaging_service::msg_addr{ep, 0}, timeout, *_mutation,
                 std::move(forward), utils::fb_utilities::get_broadcast_address(), this_shard_id(),
                 response_id, tracing::make_trace_info(tr_state));
     }
@@ -327,8 +324,7 @@ public:
             storage_proxy::response_id_type response_id, storage_proxy::clock_type::time_point timeout,
             tracing::trace_state_ptr tr_state) override {
         tracing::trace(tr_state, "Sending a learn to /{}", ep);
-        auto& ms = netw::get_local_messaging_service();
-        return ms.send_paxos_learn(netw::messaging_service::msg_addr{ep, 0}, timeout,
+        return sp._messaging.send_paxos_learn(netw::messaging_service::msg_addr{ep, 0}, timeout,
                                 *_proposal, std::move(forward), utils::fb_utilities::get_broadcast_address(),
                                 this_shard_id(), response_id, tracing::make_trace_info(tr_state));
     }
@@ -1270,8 +1266,7 @@ void paxos_response_handler::prune(utils::UUID ballot) {
             return paxos::paxos_state::prune(_schema, _key.key(), ballot, _timeout, tr_state);
         } else {
             tracing::trace(tr_state, "prune: send prune of {} to {}", ballot, peer);
-            netw::messaging_service& ms = netw::get_local_messaging_service();
-            return ms.send_paxos_prune(peer, _timeout, _schema->version(), _key.key(), ballot, tracing::make_trace_info(tr_state));
+            return _proxy->_messaging.send_paxos_prune(peer, _timeout, _schema->version(), _key.key(), ballot, tracing::make_trace_info(tr_state));
         }
     }).finally([h = shared_from_this()] {
         h->_proxy->get_stats().cas_now_pruning--;
@@ -2189,10 +2184,9 @@ future<> storage_proxy::mutate_counters(Range&& mutations, db::consistency_level
                 return std::move(m.fm);
             }));
 
-            auto& ms = netw::get_local_messaging_service();
             auto msg_addr = netw::messaging_service::msg_addr{ endpoint_and_mutations.first, 0 };
             tracing::trace(tr_state, "Enqueuing counter update to {}", msg_addr);
-            f = ms.send_counter_mutation(msg_addr, timeout, std::move(fms), cl, tracing::make_trace_info(tr_state));
+            f = _messaging.send_counter_mutation(msg_addr, timeout, std::move(fms), cl, tracing::make_trace_info(tr_state));
         }
         return f.handle_exception(std::move(handle_error));
     });
@@ -3414,9 +3408,8 @@ protected:
             tracing::trace(_trace_state, "read_mutation_data: querying locally");
             return _proxy->query_mutations_locally(_schema, cmd, _partition_range, timeout, _trace_state);
         } else {
-            auto& ms = netw::get_local_messaging_service();
             tracing::trace(_trace_state, "read_mutation_data: sending a message to /{}", ep);
-            return ms.send_read_mutation_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *cmd, _partition_range).then([this, ep](rpc::tuple<reconcilable_result, rpc::optional<cache_temperature>> result_and_hit_rate) {
+            return _proxy->_messaging.send_read_mutation_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *cmd, _partition_range).then([this, ep](rpc::tuple<reconcilable_result, rpc::optional<cache_temperature>> result_and_hit_rate) {
                 auto&& [result, hit_rate] = result_and_hit_rate;
                 tracing::trace(_trace_state, "read_mutation_data: got response from /{}", ep);
                 return make_ready_future<rpc::tuple<foreign_ptr<lw_shared_ptr<reconcilable_result>>, cache_temperature>>(rpc::tuple(make_foreign(::make_lw_shared<reconcilable_result>(std::move(result))), hit_rate.value_or(cache_temperature::invalid())));
@@ -3432,9 +3425,8 @@ protected:
             tracing::trace(_trace_state, "read_data: querying locally");
             return _proxy->query_result_local(_schema, _cmd, _partition_range, opts, _trace_state, timeout);
         } else {
-            auto& ms = netw::get_local_messaging_service();
             tracing::trace(_trace_state, "read_data: sending a message to /{}", ep);
-            return ms.send_read_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd, _partition_range, opts.digest_algo).then([this, ep](rpc::tuple<query::result, rpc::optional<cache_temperature>> result_hit_rate) {
+            return _proxy->_messaging.send_read_data(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd, _partition_range, opts.digest_algo).then([this, ep](rpc::tuple<query::result, rpc::optional<cache_temperature>> result_hit_rate) {
                 auto&& [result, hit_rate] = result_hit_rate;
                 tracing::trace(_trace_state, "read_data: got response from /{}", ep);
                 return make_ready_future<rpc::tuple<foreign_ptr<lw_shared_ptr<query::result>>, cache_temperature>>(rpc::tuple(make_foreign(::make_lw_shared<query::result>(std::move(result))), hit_rate.value_or(cache_temperature::invalid())));
@@ -3448,9 +3440,8 @@ protected:
             return _proxy->query_result_local_digest(_schema, _cmd, _partition_range, _trace_state,
                         timeout, digest_algorithm(*_proxy));
         } else {
-            auto& ms = netw::get_local_messaging_service();
             tracing::trace(_trace_state, "read_digest: sending a message to /{}", ep);
-            return ms.send_read_digest(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd,
+            return _proxy->_messaging.send_read_digest(netw::messaging_service::msg_addr{ep, 0}, timeout, *_cmd,
                         _partition_range, digest_algorithm(*_proxy)).then([this, ep] (
                     rpc::tuple<query::result_digest, rpc::optional<api::timestamp_type>, rpc::optional<cache_temperature>> digest_timestamp_hit_rate) {
                 auto&& [d, t, hit_rate] = digest_timestamp_hit_rate;
@@ -4705,7 +4696,7 @@ future<> storage_proxy::truncate_blocking(sstring keyspace, sstring cfname) {
     }
 
     auto all_endpoints = gossiper.get_live_token_owners();
-    auto& ms = netw::get_local_messaging_service();
+    auto& ms = _messaging;
     auto timeout = std::chrono::milliseconds(_db.local().get_config().truncate_request_timeout_in_ms());
 
     slogger.trace("Enqueuing truncate messages to hosts {}", all_endpoints);
@@ -4754,9 +4745,9 @@ static future<> maybe_sync(const schema_ptr& s, netw::messaging_service::msg_add
 }
 
 future<schema_ptr> storage_proxy::get_schema_definition(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return local_schema_registry().get_or_load(v, [dst] (table_schema_version v) {
+    netw::messaging_service& ms = _messaging;
+    return local_schema_registry().get_or_load(v, [dst, &ms] (table_schema_version v) {
         mlogger.debug("Requesting schema {} from {}", v, dst);
-        auto& ms = netw::get_local_messaging_service();
         return ms.send_get_schema_version(dst, v);
     });
 }
@@ -4837,14 +4828,13 @@ void storage_proxy::init_messaging_service() {
                         return apply_fn(p, trace_state_ptr, std::move(s), m, timeout);
                     });
                 }).then([&p, reply_to, shard, response_id, trace_state_ptr] () {
-                    auto& ms = netw::get_local_messaging_service();
                     // We wait for send_mutation_done to complete, otherwise, if reply_to is busy, we will accumulate
                     // lots of unsent responses, which can OOM our shard.
                     //
                     // Usually we will return immediately, since this work only involves appending data to the connection
                     // send buffer.
                     tracing::trace(trace_state_ptr, "Sending mutation_done to /{}", reply_to);
-                    return ms.send_mutation_done(
+                    return p->_messaging.send_mutation_done(
                             netw::messaging_service::msg_addr{reply_to, shard},
                             shard,
                             response_id,
@@ -4884,8 +4874,7 @@ void storage_proxy::init_messaging_service() {
                 if (errors) {
                     if (p->features().cluster_supports_write_failure_reply()) {
                         tracing::trace(trace_state_ptr, "Sending mutation_failure with {} failures to /{}", errors, reply_to);
-                        auto& ms = netw::get_local_messaging_service();
-                        fut = ms.send_mutation_failed(
+                        fut = p->_messaging.send_mutation_failed(
                                 netw::messaging_service::msg_addr{reply_to, shard},
                                 shard,
                                 response_id,
