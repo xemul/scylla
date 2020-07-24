@@ -1070,56 +1070,6 @@ public static class MigrationsSerializer implements IVersionedSerializer<Collect
 }
 #endif
 
-
-// Ensure that given schema version 's' was synced with on current node. See schema::is_synced().
-//
-// The endpoint is the node from which 's' originated.
-//
-static future<> maybe_sync(const schema_ptr& s, netw::messaging_service::msg_addr endpoint) {
-    if (s->is_synced()) {
-        return make_ready_future<>();
-    }
-
-    return s->registry_entry()->maybe_sync([s, endpoint] {
-        auto merge = [gs = global_schema_ptr(s), endpoint] {
-            schema_ptr s = gs.get();
-            mlogger.debug("Syncing schema of {}.{} (v={}) with {}", s->ks_name(), s->cf_name(), s->version(), endpoint);
-            return get_local_migration_manager().merge_schema_from(endpoint);
-        };
-
-        // Serialize schema sync by always doing it on shard 0.
-        if (this_shard_id() == 0) {
-            return merge();
-        } else {
-            return smp::submit_to(0, [gs = global_schema_ptr(s), endpoint, merge] {
-                schema_ptr s = gs.get();
-                schema_registry_entry& e = *s->registry_entry();
-                return e.maybe_sync(merge);
-            });
-        }
-    });
-}
-
-future<schema_ptr> get_schema_definition(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return local_schema_registry().get_or_load(v, [dst] (table_schema_version v) {
-        mlogger.debug("Requesting schema {} from {}", v, dst);
-        auto& ms = netw::get_local_messaging_service();
-        return ms.send_get_schema_version(dst, v);
-    });
-}
-
-future<schema_ptr> get_schema_for_read(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return get_schema_definition(v, dst);
-}
-
-future<schema_ptr> get_schema_for_write(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return get_schema_definition(v, dst).then([dst] (schema_ptr s) {
-        return maybe_sync(s, dst).then([s] {
-            return s;
-        });
-    });
-}
-
 future<> migration_manager::sync_schema(const database& db, const std::vector<gms::inet_address>& nodes) {
     using schema_and_hosts = std::unordered_map<utils::UUID, std::vector<gms::inet_address>>;
     return do_with(schema_and_hosts(), db.get_version(), [this, &nodes] (schema_and_hosts& schema_map, utils::UUID& my_version) {
