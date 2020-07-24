@@ -4752,7 +4752,7 @@ static future<> maybe_sync(const schema_ptr& s, netw::messaging_service::msg_add
     });
 }
 
-future<schema_ptr> get_schema_definition(table_schema_version v, netw::messaging_service::msg_addr dst) {
+future<schema_ptr> storage_proxy::get_schema_definition(table_schema_version v, netw::messaging_service::msg_addr dst) {
     return local_schema_registry().get_or_load(v, [dst] (table_schema_version v) {
         mlogger.debug("Requesting schema {} from {}", v, dst);
         auto& ms = netw::get_local_messaging_service();
@@ -4761,11 +4761,11 @@ future<schema_ptr> get_schema_definition(table_schema_version v, netw::messaging
 }
 
 future<schema_ptr> get_schema_for_read(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return get_schema_definition(v, dst);
+    return get_local_storage_proxy().get_schema_definition(v, dst);
 }
 
 future<schema_ptr> get_schema_for_write(table_schema_version v, netw::messaging_service::msg_addr dst) {
-    return get_schema_definition(v, dst).then([dst] (schema_ptr s) {
+    return get_local_storage_proxy().get_schema_definition(v, dst).then([dst] (schema_ptr s) {
         return maybe_sync(s, dst).then([s] {
             return s;
         });

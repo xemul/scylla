@@ -499,6 +499,10 @@ public:
     future<> mutate_with_triggers(std::vector<mutation> mutations, db::consistency_level cl, clock_type::time_point timeout,
                                   bool should_mutate_atomically, tracing::trace_state_ptr tr_state, service_permit permit, bool raw_counters = false);
 
+    // Returns schema of given version, either from cache or from remote node identified by 'from'.
+    // Doesn't affect current node's schema in any way.
+    future<schema_ptr> get_schema_definition(table_schema_version, netw::msg_addr from);
+
     /**
     * See mutate. Adds additional steps before and after writing a batch.
     * Before writing the batch (but after doing availability check against the FD for the row replicas):
@@ -738,10 +742,6 @@ public:
     // adn returns true when quorum of such requests are accumulated
     bool learned(gms::inet_address ep);
 };
-
-// Returns schema of given version, either from cache or from remote node identified by 'from'.
-// Doesn't affect current node's schema in any way.
-future<schema_ptr> get_schema_definition(table_schema_version, netw::msg_addr from);
 
 // Returns schema of given version, either from cache or from remote node identified by 'from'.
 // The returned schema may not be synchronized. See schema::is_synced().

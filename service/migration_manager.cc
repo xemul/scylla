@@ -344,7 +344,7 @@ future<> migration_manager::merge_schema_from(netw::messaging_service::msg_addr 
     mlogger.debug("Applying schema mutations from {}", src);
     return map_reduce(mutations, [src](const frozen_mutation& fm) {
         // schema table's schema is not syncable so just use get_schema_definition()
-        return get_schema_definition(fm.schema_version(), src).then([&fm](schema_ptr s) {
+        return get_local_storage_proxy().get_schema_definition(fm.schema_version(), src).then([&fm](schema_ptr s) {
             s->registry_entry()->mark_synced();
             return fm.unfreeze(std::move(s));
         });
