@@ -26,6 +26,7 @@
 #include <random>
 #include <fmt/core.h>
 #include "perf.hh"
+#include "utils/allocation_strategy.hh"
 
 using per_key_t = int64_t;
 
@@ -133,6 +134,27 @@ public:
     virtual ~map_tester() = default;
 };
 
+class allocator_wrapper final : public allocation_strategy {
+    size_t _allocated;
+public:
+    virtual void* alloc(migrate_fn mfn, size_t size, size_t alignment) override {
+        _allocated += size;
+        return standard_allocator().alloc(mfn, size, alignment);
+    }
+    virtual void free(void* object, size_t size) override {
+        _allocated -= size;
+        standard_allocator().free(object, size);
+    }
+    virtual void free(void* object) override {
+        _allocated -= size_for_allocation_strategy(object);
+        standard_allocator().free(object);
+    }
+    virtual size_t object_memory_size_in_allocator(const void* obj) const noexcept override {
+        return standard_allocator().object_memory_size_in_allocator(obj);
+    }
+    size_t allocated() const { return _allocated; }
+};
+
 int main(int argc, char **argv) {
     namespace bpo = boost::program_options;
     app_template app;
@@ -180,18 +202,22 @@ int main(int argc, char **argv) {
             for (auto rep = 0; rep < iters; rep++) {
                 std::shuffle(keys.begin(), keys.end(), g);
                 seastar::thread::yield();
+                allocator_wrapper alloc;
 
-                auto d = duration_in_seconds([&] {
-                    for (int i = 0; i < count; i++) {
-                        c->insert(keys[i]);
-                        if ((i + 1) % batch == 0) {
-                            seastar::thread::yield();
+                with_allocator(alloc, [&c, &batch, &count, &keys] {
+                    auto d = duration_in_seconds([&] {
+                        for (int i = 0; i < count; i++) {
+                            c->insert(keys[i]);
+                            if ((i + 1) % batch == 0) {
+                                seastar::thread::yield();
+                            }
                         }
-                    }
+                    });
+
+                    fmt::print("fill: {:.6f} ms\n", d.count() * 1000);
                 });
 
-                fmt::print("fill: {:.6f} ms\n", d.count() * 1000);
-
+                fmt::print("memory: {}\n", alloc.allocated());
                 if (stats) {
                     c->show_stats();
                 }
@@ -200,7 +226,7 @@ int main(int argc, char **argv) {
                     std::shuffle(keys.begin(), keys.end(), g);
                     seastar::thread::yield();
 
-                    d = duration_in_seconds([&] {
+                    auto d = duration_in_seconds([&] {
                         for (int i = 0; i < count; i++) {
                             c->erase(keys[i]);
                             if ((i + 1) % batch == 0) {
@@ -211,7 +237,7 @@ int main(int argc, char **argv) {
 
                     fmt::print("erase: {:.6f} ms\n", d.count() * 1000);
                 } else if (tst == "drain") {
-                    d = duration_in_seconds([&] {
+                    auto d = duration_in_seconds([&] {
                         c->drain(batch);
                     });
 
@@ -220,7 +246,7 @@ int main(int argc, char **argv) {
                     std::shuffle(keys.begin(), keys.end(), g);
                     seastar::thread::yield();
 
-                    d = duration_in_seconds([&] {
+                    auto d = duration_in_seconds([&] {
                         for (int i = 0; i < count; i++) {
                             c->lower_bound(keys[i]);
                             if ((i + 1) % batch == 0) {
