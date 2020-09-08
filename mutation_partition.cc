@@ -358,9 +358,8 @@ stop_iteration mutation_partition::apply_monotonically(const schema& s, mutation
             src_e.set_continuous(false);
             if (tracker) {
                 tracker->on_remove(*i);
-                i->_lru_link.swap_nodes(src_e._lru_link);
                 // Newer evictable versions store complete rows
-                i->_row = std::move(src_e._row);
+                *i = std::move(src_e);
             } else {
                 memory::on_alloc_point();
                 i->apply_monotonically(s, std::move(src_e));
@@ -1575,6 +1574,13 @@ rows_entry::rows_entry(rows_entry&& o) noexcept
         o._lru_link.unlink();
         cache_tracker::lru_type::node_algorithms::link_after(prev, _lru_link.this_ptr());
     }
+}
+
+rows_entry& rows_entry::operator=(rows_entry&& o) noexcept {
+    assert(this != &o);
+    _lru_link.swap_nodes(o._lru_link);
+    _row = std::move(o._row);
+    return *this;
 }
 
 row::row(const schema& s, column_kind kind, const row& o)

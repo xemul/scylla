@@ -1056,6 +1056,7 @@ public:
         : _key(key), _row(s, tomb, marker, row)
     { }
     rows_entry(rows_entry&& o) noexcept;
+    rows_entry& operator=(rows_entry&& x) noexcept;
     rows_entry(const schema& s, const rows_entry& e)
         : _key(e._key)
         , _row(s, e._row)
