@@ -392,7 +392,7 @@ stop_iteration mutation_partition::apply_monotonically(const schema& s, mutation
     if (s.version() == p_schema.version()) {
         return apply_monotonically(s, std::move(p), no_cache_tracker, app_stats, preemptible);
     } else {
-        mutation_partition p2(s, p);
+        mutation_partition p2(std::move(p));
         p2.upgrade(p_schema, s);
         return apply_monotonically(s, std::move(p2), no_cache_tracker, app_stats, is_preemptible::no); // FIXME: make preemptible
     }
