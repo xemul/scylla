@@ -55,6 +55,16 @@ public:
         return _val < o._val;
     }
 
+    int tri_cmp(const tree_test_key_base& o) const noexcept {
+        if (_val < o._val) {
+            return -1;
+        } else if (_val > o._val) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
     explicit tree_test_key_base(int nr, int cookie = 0) : _val(nr) {
         _cookie = new int(cookie);
         _p_cookie = new int(1);
