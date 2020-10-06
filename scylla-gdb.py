@@ -151,6 +151,39 @@ class intrusive_set:
             yield n
 
 
+class intrusive_rbtree:
+    size_t = gdb.lookup_type('size_t')
+
+    def __init__(self, ref):
+        container_type = ref.type.strip_typedefs()
+        self.node_type = container_type.template_argument(0)
+        link_type = container_type.template_argument(1)
+        self.link_offset = link_type.cast(self.size_t)
+        self.root = ref['_base']['_root']
+        self.hook_ptr_type = self.root.type
+
+    def __to_node_ptr(self, node):
+        node_ptr = node['_v'].cast(self.size_t)
+        if node_ptr & 0x1:
+            return None
+        return node_ptr.cast(self.hook_ptr_type).dereference()
+
+    def __visit(self, node):
+        if node:
+            for n in self.__visit(self.__to_node_ptr(node['_child_or_tree'][0])):
+                yield n
+
+            node_ptr = node.cast(self.size_t) - self.link_offset
+            yield node_ptr.cast(self.node_type.pointer()).dereference()
+
+            for n in self.__visit(self.__to_node_ptr(node['_child_or_tree'][1])):
+                yield n
+
+    def __iter__(self):
+        for n in self.__visit(self.root):
+            yield n
+
+
 class double_decker:
     def __init__(self, ref):
         self.tree = ref['_tree']
@@ -593,8 +626,15 @@ class mutation_partition_printer(gdb.printing.PrettyPrinter):
     def __init__(self, val):
         self.val = val
 
+    def _rows(self):
+        try:
+            return intrusive_rbtree(self.val['_rows'])
+        except gdb.error:
+            # Compatibility, the row-cache was switched to RB tree at some point
+            return intrusive_set_external_comparator(self.val['_rows'])
+
     def to_string(self):
-        rows = list(str(r) for r in intrusive_set_external_comparator(self.val['_rows']))
+        rows = list(str(r) for r in self._rows())
         range_tombstones = list(str(r) for r in intrusive_set(self.val['_row_tombstones']['_tombstones']))
         return '{_tombstone=%s, _static_row=%s (cont=%s), _row_tombstones=[%s], _rows=[%s]}' % (
             self.val['_tombstone'],
