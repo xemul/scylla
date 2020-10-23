@@ -398,6 +398,7 @@ scylla_tests = set([
     'test/boost/vint_serialization_test',
     'test/boost/virtual_reader_test',
     'test/boost/bptree_test',
+    'test/boost/radix_tree_test',
     'test/boost/double_decker_test',
     'test/boost/stall_free_test',
     'test/boost/imr_test',
@@ -427,6 +428,8 @@ scylla_tests = set([
     'test/unit/row_cache_stress_test',
     'test/unit/bptree_stress_test',
     'test/unit/bptree_compaction_test',
+    'test/unit/radix_tree_stress_test',
+    'test/unit/radix_tree_compaction_test',
 ])
 
 perf_tests = set([
@@ -1044,6 +1047,8 @@ tests_not_using_seastar_test_framework = set([
     'test/unit/row_cache_alloc_stress_test',
     'test/unit/bptree_stress_test',
     'test/unit/bptree_compaction_test',
+    'test/unit/radix_tree_stress_test',
+    'test/unit/radix_tree_compaction_test',
     'test/manual/sstable_scan_footprint_test',
 ]) | pure_boost_tests
 
