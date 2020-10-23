@@ -27,7 +27,7 @@
 #include <fmt/core.h>
 #include "perf.hh"
 
-using per_key_t = int64_t;
+using per_key_t = int32_t;
 
 struct key_compare {
     bool operator()(const per_key_t& a, const per_key_t& b) const noexcept { return a < b; }
@@ -106,6 +106,49 @@ public:
     }
     virtual ~bptree_tester() { clear(); }
 };
+
+#include "utils/compact-radix-tree.hh"
+
+class radix_tester : public collection_tester {
+public:
+    using test_tree = compact_radix_tree::tree<unsigned long>;
+
+private:
+    test_tree _t;
+public:
+    radix_tester() : _t() {}
+    virtual void insert(per_key_t k) override { _t.emplace(k, 0); }
+    virtual void lower_bound(per_key_t k) override {
+        auto i = _t.lower_bound(k);
+        assert(i != nullptr);
+    }
+    virtual void scan(int batch) override {
+        scan_collection(_t, batch);
+    }
+    virtual void erase(per_key_t k) override { _t.erase(k); }
+    virtual void drain(int batch) override {
+        int x = 0;
+        while (!_t.empty()) {
+            _t.erase(_t.begin().index());
+            if (++x % batch == 0) {
+                seastar::thread::yield();
+            }
+        }
+    }
+    virtual void clear() override { _t.clear(); }
+    virtual void insert_and_erase(per_key_t k) override {
+        _t.emplace(k, 0);
+        _t.erase(k);
+    }
+    virtual void show_stats() {
+    }
+    virtual ~radix_tester() { clear(); }
+};
+
+namespace compact_radix_tree {
+template<>
+radix_tester::test_tree::node_head radix_tester::test_tree::nil_root = radix_tester::test_tree::node_head();
+}
 
 #include "intrusive_set_external_comparator.hh"
 
@@ -270,6 +313,8 @@ int main(int argc, char **argv) {
                 c = std::make_unique<map_tester>();
             } else if (col == "isec") {
                 c = std::make_unique<isec_tester>();
+            } else if (col == "radix") {
+                c = std::make_unique<radix_tester>();
             } else {
                 fmt::print("Unknown collection\n");
                 return;
