@@ -41,6 +41,18 @@ arch_target("default") int array_search_gt_impl(int64_t val, const int64_t* arra
     return i;
 }
 
+arch_target("default") unsigned array_search_16_eq_impl(uint8_t val, const uint8_t* arr) {
+    unsigned i;
+
+    for (i = 0; i < 16; i++) {
+        if (arr[i] == val) {
+            break;
+        }
+    }
+
+    return i;
+}
+
 #ifdef __x86_64__
 
 /*
@@ -89,10 +101,25 @@ arch_target("avx2") int array_search_gt_impl(int64_t val, const int64_t* array, 
     return size - cnt;
 }
 
+/*
+ * SSE4 version of searching in array for an exact match.
+ */
+arch_target("sse4") unsigned array_search_16_eq_impl(uint8_t val, const uint8_t* arr) {
+	auto a = _mm_lddqu_si128((__m128i*)arr);
+	auto b = _mm_set1_epi8(val);
+	auto c = _mm_cmpeq_epi8(a, b);
+	auto m = _mm_movemask_epi8(c);
+	return __builtin_ctz(m);
+}
+
 #endif
 
 int array_search_gt(int64_t val, const int64_t* array, const int capacity, const int size) {
     return array_search_gt_impl(val, array, capacity, size);
+}
+
+unsigned array_search_16_eq(uint8_t val, const uint8_t* arr) {
+    return array_search_16_eq_impl(val, arr);
 }
 
 }
