@@ -801,6 +801,14 @@ void appending_hash<row>::operator()<legacy_xx_hasher_without_null_digest>(legac
 }
 
 cell_hash_opt row::cell_hash_for(column_id id) const {
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    const cell_and_hash* cah = _cells.get(id);
+    return cah != nullptr ? cah->hash : cell_hash_opt();
+
+    }
+
     if (_type == storage_type::vector) {
         return id < max_vector_size && _storage.vector.present.test(id) ? _storage.vector.v[id].hash : cell_hash_opt();
     }
@@ -988,6 +996,18 @@ static auto prefixed(const sstring& prefix, const RangeOfPrintable& r) {
 
 std::ostream&
 operator<<(std::ostream& os, const row::printer& p) {
+    if (p._row._type == row::storage_type::array) {
+    auto& cells = p._row._storage.array;
+
+    os << "{{row:";
+    cells.walk([&] (column_id id, const cell_and_hash& cah) {
+        auto& cdef = p._schema.column_at(p._kind, id);
+        os << "\n    " << cdef.name_as_text() << atomic_cell_or_collection::printer(cdef, cah.cell);
+        return true;
+    });
+    return os << "}}";
+    }
+
     auto add_printer = [&] (const auto& c) {
         auto& column_def = p._schema.column_at(p._kind, c.first);
         return std::pair<sstring, atomic_cell_or_collection::printer>(std::piecewise_construct,
@@ -1003,6 +1023,8 @@ operator<<(std::ostream& os, const row::printer& p) {
         break;
     case row::storage_type::vector:
         cells = ::join(",", prefixed("\n      ", p._row.get_range_vector() | boost::adaptors::transformed(add_printer)));
+        break;
+    case row::storage_type::array:
         break;
     }
     return fmt_print(os, "{{row: {}}}", cells);
@@ -1249,6 +1271,17 @@ row::apply(const column_definition& column, atomic_cell_or_collection&& value, c
 
 template<typename Func>
 void row::consume_with(Func&& func) {
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    _cells.weed([func, this] (column_id id, cell_and_hash& cah) {
+        _size--;
+        func(id, cah);
+        return true;
+    });
+
+    }
+
     if (_type == storage_type::vector) {
         unsigned i = 0;
         for (; i < _storage.vector.v.size(); i++) {
@@ -1277,6 +1310,21 @@ row::apply_monotonically(const column_definition& column, atomic_cell_or_collect
 
     // our mutations are not yet immutable
     auto id = column.id;
+
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    cell_and_hash* cah = _cells.get(id);
+    if (cah == nullptr) {
+        // FIXME -- add .locate method to radix_tree to find or allocate a spot
+        _cells.emplace(id, std::move(value), std::move(hash));
+        _size++;
+    } else {
+        ::apply_monotonically(column, *cah, value, std::move(hash));
+    }
+
+    }
+
     if (_type == storage_type::vector && id < max_vector_size) {
         if (id >= _storage.vector.v.size()) {
             _storage.vector.v.resize(id);
@@ -1308,6 +1356,13 @@ row::apply_monotonically(const column_definition& column, atomic_cell_or_collect
 
 void
 row::append_cell(column_id id, atomic_cell_or_collection value) {
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    _cells.emplace(id, std::move(value), cell_hash_opt());
+
+    }
+
     if (_type == storage_type::vector && id < max_vector_size) {
         if (_storage.vector.v.size() > id) {
             on_internal_error(mplog, format("Attempted to append cell#{} to row already having {} cells", id, _storage.vector.v.size()));
@@ -1327,6 +1382,13 @@ row::append_cell(column_id id, atomic_cell_or_collection value) {
 
 const cell_and_hash*
 row::find_cell_and_hash(column_id id) const {
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    return _cells.get(id);
+
+    }
+
     if (_type == storage_type::vector) {
         if (id >= _storage.vector.v.size() || !_storage.vector.present.test(id)) {
             return nullptr;
@@ -1349,6 +1411,17 @@ row::find_cell(column_id id) const {
 
 size_t row::external_memory_usage(const schema& s, column_kind kind) const {
     size_t mem = 0;
+
+    if (_type == storage_type::array) {
+    auto& _cells = _storage.array;
+
+    return _cells.memory_usage([&] (column_id id, const cell_and_hash& cah) noexcept {
+            auto& cdef = s.column_at(kind, id);
+            return cah.cell.external_memory_usage(*cdef.type);
+    });
+
+    }
+
     if (_type == storage_type::vector) {
         mem += _storage.vector.v.used_space_external_memory_usage();
         column_id id = 0;
@@ -1601,6 +1674,27 @@ row::row(const schema& s, column_kind kind, const row& o)
     : _type(o._type)
     , _size(o._size)
 {
+    if (_type == storage_type::array) {
+    auto& _cells = o._storage.array;
+
+    try {
+        // FIXME -- implement .clone_from, it would be faster
+        _cells.walk([this, &s, &kind] (column_id id, const cell_and_hash& cah) {
+            auto& _cells = _storage.array;
+
+            auto& cdef = s.column_at(kind, id);
+            _cells.emplace(id, cah.cell.copy(*cdef.type), cah.hash);
+            return true;
+        });
+    } catch (...) {
+        auto& _cells = _storage.array;
+
+        _cells.clear();
+        throw;
+    }
+
+    }
+
     if (_type == storage_type::vector) {
         auto& other_vec = o._storage.vector;
         auto& vec = *new (&_storage.vector) vector_storage;
@@ -2740,3 +2834,9 @@ future<> mutation_cleaner_impl::drain() {
 can_gc_fn always_gc = [] (tombstone) { return true; };
 
 logging::logger compound_logger("compound");
+
+namespace compact_radix_tree {
+using mp_tree_t = tree<cell_and_hash, column_id>;
+template<>
+mp_tree_t::node_head mp_tree_t::nil_root = mp_tree_t::node_head();
+}
