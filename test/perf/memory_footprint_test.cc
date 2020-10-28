@@ -74,6 +74,19 @@ public:
         std::cout << prefix() << "sizeof(deletable_row) = " << sizeof(deletable_row) << "\n";
         std::cout << prefix() << "sizeof(row) = " << sizeof(row) << "\n";
         std::cout << prefix() << "sizeof(atomic_cell_or_collection) = " << sizeof(atomic_cell_or_collection) << "\n";
+        {
+            using sa_type = row::sparse_array_type;
+            nest n;
+            std::cout << prefix() << "row::_cells node sizes:\n";
+            std::cout << prefix() << "    leaf.tiny = " << sa_type::leaf_node::node_type::node_size(sa_type::node_kind::tiny) << "\n";
+            std::cout << prefix() << "        .small = " << sa_type::leaf_node::node_type::node_size(sa_type::node_kind::small) << "\n";
+            std::cout << prefix() << "        .medium = " << sa_type::leaf_node::node_type::node_size(sa_type::node_kind::medium) << "\n";
+            std::cout << prefix() << "        .large = " << sa_type::leaf_node::node_type::node_size(sa_type::node_kind::large) << "\n";
+            std::cout << prefix() << "   inner.tiny = " << sa_type::inner_node::node_type::node_size(sa_type::node_kind::tiny) << "\n";
+            std::cout << prefix() << "        .small = " << sa_type::inner_node::node_type::node_size(sa_type::node_kind::small) << "\n";
+            std::cout << prefix() << "        .medium = " << sa_type::inner_node::node_type::node_size(sa_type::node_kind::medium) << "\n";
+            std::cout << prefix() << "        .large = " << sa_type::inner_node::node_type::node_size(sa_type::node_kind::large) << "\n";
+        }
     }
 
     static void print_mutation_partition_size() {
