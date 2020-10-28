@@ -74,6 +74,18 @@ public:
         std::cout << prefix() << "sizeof(deletable_row) = " << sizeof(deletable_row) << "\n";
         std::cout << prefix() << "sizeof(row) = " << sizeof(row) << "\n";
         std::cout << prefix() << "sizeof(atomic_cell_or_collection) = " << sizeof(atomic_cell_or_collection) << "\n";
+        {
+            nest n;
+            std::cout << prefix() << "row::_cells node sizes:\n";
+            std::cout << prefix() << "    leaf.tiny = " << sizeof(row::sparse_array_type::leaf_node::tiny_node) << "\n";
+            std::cout << prefix() << "        .small = " << sizeof(row::sparse_array_type::leaf_node::small_node) << "\n";
+            std::cout << prefix() << "        .medium = " << sizeof(row::sparse_array_type::leaf_node::medium_node) << "\n";
+            std::cout << prefix() << "        .large = " << sizeof(row::sparse_array_type::leaf_node::large_node) << "\n";
+            std::cout << prefix() << "   inner.tiny = " << sizeof(row::sparse_array_type::inner_node::tiny_node) << "\n";
+            std::cout << prefix() << "        .small = " << sizeof(row::sparse_array_type::inner_node::small_node) << "\n";
+            std::cout << prefix() << "        .medium = " << sizeof(row::sparse_array_type::inner_node::medium_node) << "\n";
+            std::cout << prefix() << "        .large = " << sizeof(row::sparse_array_type::inner_node::large_node) << "\n";
+        }
     }
 
     static void print_mutation_partition_size() {

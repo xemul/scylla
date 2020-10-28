@@ -28,6 +28,8 @@
 #include "utils/allocation_strategy.hh"
 #include "utils/array-search.hh"
 
+class size_calculator;
+
 namespace compact_radix_tree {
 
 template <typename T, typename Idx> class printer;
@@ -51,6 +53,7 @@ template <typename T, typename Index = unsigned int>
 requires std::is_nothrow_move_constructible_v<T> && std::is_integral_v<Index>
 class tree {
     template <typename A, typename I> friend class printer;
+    friend class ::size_calculator;
 
     class leaf_node;
     class inner_node;
@@ -1488,6 +1491,7 @@ private:
 
     class leaf_node {
         template <typename A, typename B> friend class printer;
+        friend class ::size_calculator;
         template <typename A, typename... L> friend class node_base;
         friend class node_head;
 
@@ -1536,6 +1540,7 @@ private:
 
     class inner_node {
         template <typename A, typename B> friend class printer;
+        friend class ::size_calculator;
         template <typename A, typename... L> friend class node_base;
         friend class node_head;
 
