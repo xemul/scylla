@@ -866,6 +866,7 @@ struct fuzzy_test_config {
     std::chrono::seconds timeout;
     unsigned concurrency;
     unsigned scans;
+    std::chrono::minutes duration;
 };
 
 static void
@@ -907,9 +908,9 @@ run_fuzzy_test_scan(size_t i, fuzzy_test_config cfg, distributed<database>& db, 
     tests::require(res_it == results.cend() && exp_it == expected_partitions.cend());
 }
 
-future<> run_concurrently(size_t count, size_t concurrency, noncopyable_function<future<>(size_t)> func) {
-    return do_with(std::move(func), gate(), semaphore(concurrency), std::exception_ptr(),
-            [count] (noncopyable_function<future<>(size_t)>& func, gate& gate, semaphore& sem, std::exception_ptr& error) {
+future<> run_concurrently(size_t count, size_t concurrency, std::chrono::minutes duration, noncopyable_function<future<>(size_t)> func) {
+    return do_with(std::move(func), gate(), semaphore(concurrency), timer<>(), std::exception_ptr(),
+            [count, duration] (noncopyable_function<future<>(size_t)>& func, gate& gate, semaphore& sem, timer<>& stop, std::exception_ptr& error) {
         for (size_t i = 0; i < count; ++i) {
             // Future is waited on indirectly (via `gate`).
             (void)with_gate(gate, [&func, &sem, &error, i] {
@@ -924,10 +925,15 @@ future<> run_concurrently(size_t count, size_t concurrency, noncopyable_function
                         error = std::move(e);
                     });
                     return f;
-                });
+                }).handle_exception([] (auto e) { return make_ready_future(); });
             });
         }
-        return gate.close().then([&error] {
+
+        stop.set_callback([&sem] { sem.broken(); });
+        stop.arm(duration);
+
+        return gate.close().then([&error, &timer] {
+            timer.cancel();
             if (error) {
                 testlog.trace("Run failed, returning with error: {}", error);
                 return make_exception_future<>(std::move(error));
@@ -941,7 +947,7 @@ future<> run_concurrently(size_t count, size_t concurrency, noncopyable_function
 static future<>
 run_fuzzy_test_workload(fuzzy_test_config cfg, distributed<database>& db, schema_ptr schema,
         const std::vector<test::partition_description>& part_descs) {
-    return run_concurrently(cfg.scans, cfg.concurrency, [cfg, &db, schema = std::move(schema), &part_descs] (size_t i) {
+    return run_concurrently(cfg.scans, cfg.concurrency, cfg.duration, [cfg, &db, schema = std::move(schema), &part_descs] (size_t i) {
         return seastar::async([i, cfg, &db, schema, &part_descs] () mutable {
             run_fuzzy_test_scan(i, cfg, db, std::move(schema), part_descs);
         });
@@ -964,9 +970,9 @@ SEASTAR_THREAD_TEST_CASE(fuzzy_test) {
         auto pop_desc = create_fuzzy_test_table(env, rnd_engine);
 
 #ifdef DEBUG
-        auto cfg = fuzzy_test_config{seed, std::chrono::seconds{8}, 1, 1};
+        auto cfg = fuzzy_test_config{seed, std::chrono::seconds{8}, 1, 1, std::chrono::minutes(3)};
 #else
-        auto cfg = fuzzy_test_config{seed, std::chrono::seconds{2}, 16, 256};
+        auto cfg = fuzzy_test_config{seed, std::chrono::seconds{2}, 16, 256, std::chrono::minutes(3)};
 #endif
 
         testlog.info("Running test workload with configuration: seed={}, timeout={}s, concurrency={}, scans={}", cfg.seed, cfg.timeout.count(),
