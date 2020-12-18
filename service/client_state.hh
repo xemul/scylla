@@ -52,16 +52,13 @@
 #include "auth/permission.hh"
 #include "tracing/tracing.hh"
 #include "tracing/trace_state.hh"
+#include "gms/feature_service.hh"
 
 #include "enum_set.hh"
 #include "transport/cql_protocol_extension.hh"
 
 namespace auth {
 class resource;
-}
-
-namespace gms {
-class feature_service;
 }
 
 namespace service {
@@ -78,12 +75,13 @@ public:
     // "internal" is used to mark ClientState as used by some internal component
     // that should have an ability to modify system keyspace.
     enum class options {
-        internal, thrift,
+        internal, thrift, cluster_supports_cdc,
     };
 
     using options_set = enum_set<super_enum<options,
             options::internal,
-            options::thrift
+            options::thrift,
+            options::cluster_supports_cdc
         >>;
 
     // This class is used to move client_state between shards
@@ -178,6 +176,7 @@ public:
             , _remote_address(remote_address)
             , _auth_service(&auth_service) {
         _options.set_if<options::thrift>(thrift);
+        _options.set_if<options::cluster_supports_cdc>((bool)features.cluster_supports_cdc());
         if (!auth_service.underlying_authenticator().require_authentication()) {
             _user = auth::authenticated_user();
         }
