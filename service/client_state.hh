@@ -71,6 +71,17 @@ public:
         UNINITIALIZED, AUTHENTICATION, READY
     };
 
+    // "internal" is used to mark ClientState as used by some internal component
+    // that should have an ability to modify system keyspace.
+    enum class options {
+        internal, thrift,
+    };
+
+    using options_set = enum_set<super_enum<options,
+            options::internal,
+            options::thrift
+        >>;
+
     // This class is used to move client_state between shards
     // It is created on a shard that owns client_state than passed
     // to a target shard where client_state_for_another_shard::get()
@@ -89,7 +100,7 @@ public:
 private:
     client_state(const client_state* cs, seastar::sharded<auth::service>* auth_service)
             : _keyspace(cs->_keyspace),  _user(cs->_user), _auth_state(cs->_auth_state),
-              _is_internal(cs->_is_internal), _is_thrift(cs->_is_thrift), _remote_address(cs->_remote_address),
+              _options(cs->_options), _remote_address(cs->_remote_address),
               _auth_service(auth_service ? &auth_service->local() : nullptr),
               _enabled_protocol_extensions(cs->_enabled_protocol_extensions) {}
     friend client_state_for_another_shard;
@@ -121,11 +132,7 @@ private:
     std::optional<sstring> _driver_name, _driver_version;
 
     auth_state _auth_state = auth_state::UNINITIALIZED;
-
-    // isInternal is used to mark ClientState as used by some internal component
-    // that should have an ability to modify system keyspace.
-    bool _is_internal;
-    bool _is_thrift;
+    options_set _options;
 
     // The biggest timestamp that was returned by getTimestamp/assigned to a query
     static thread_local api::timestamp_type _last_timestamp_micros;
@@ -163,10 +170,10 @@ public:
     }
 
     client_state(external_tag, auth::service& auth_service, const socket_address& remote_address = socket_address(), bool thrift = false)
-            : _is_internal(false)
-            , _is_thrift(thrift)
+            : _options()
             , _remote_address(remote_address)
             , _auth_service(&auth_service) {
+        _options.set_if<options::thrift>(thrift);
         if (!auth_service.underlying_authenticator().require_authentication()) {
             _user = auth::authenticated_user();
         }
@@ -182,8 +189,7 @@ public:
 
     client_state(internal_tag)
             : _keyspace("system")
-            , _is_internal(true)
-            , _is_thrift(false)
+            , _options(options_set::of<options::internal>())
     {}
 
     client_state(const client_state&) = delete;
@@ -197,11 +203,11 @@ public:
     }
 
     bool is_thrift() const {
-        return _is_thrift;
+        return _options.contains<options::thrift>();
     }
 
     bool is_internal() const {
-        return _is_internal;
+        return _options.contains<options::internal>();
     }
 
     /**

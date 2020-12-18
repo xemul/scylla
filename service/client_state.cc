@@ -100,7 +100,7 @@ void service::client_state::ensure_not_anonymous() const {
 
 future<> service::client_state::has_all_keyspaces_access(
                 auth::permission p) const {
-    if (_is_internal) {
+    if (is_internal()) {
         return make_ready_future();
     }
     validate_login();
@@ -139,7 +139,7 @@ future<> service::client_state::has_access(const sstring& ks, auth::command_desc
     if (ks.empty()) {
         throw exceptions::invalid_request_exception("You have not set a keyspace for this session");
     }
-    if (_is_internal) {
+    if (is_internal()) {
         return make_ready_future();
     }
 
@@ -223,7 +223,7 @@ future<> service::client_state::has_access(const sstring& ks, auth::command_desc
 }
 
 future<bool> service::client_state::check_has_permission(auth::command_desc cmd) const {
-    if (_is_internal) {
+    if (is_internal()) {
         return make_ready_future<bool>(true);
     }
 
