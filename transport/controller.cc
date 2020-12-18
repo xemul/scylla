@@ -139,7 +139,7 @@ future<> controller::do_start_server() {
             }
         }
 
-        cserver->start(std::ref(_qp), std::ref(_auth_service), std::ref(_mnotifier), cql_server_config).get();
+        cserver->start(std::ref(_qp), std::ref(_auth_service), std::ref(_mnotifier), std::ref(_db), cql_server_config).get();
 
         try {
             parallel_for_each(configs, [cserver, keepalive](const listen_cfg & cfg) {

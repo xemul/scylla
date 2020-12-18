@@ -146,6 +146,7 @@ private:
 
     std::vector<server_socket> _listeners;
     distributed<cql3::query_processor>& _query_processor;
+    const gms::feature_service& _features;
     cql_server_config _config;
     size_t _max_request_size;
     utils::updateable_value<uint32_t> _max_concurrent_requests;
@@ -157,11 +158,12 @@ private:
     auth::service& _auth_service;
 public:
     cql_server(distributed<cql3::query_processor>& qp, auth::service&,
-            service::migration_notifier& mn,
+            service::migration_notifier& mn, database& db,
             cql_server_config config);
     future<> listen(socket_address addr, std::shared_ptr<seastar::tls::credentials_builder> = {}, bool is_shard_aware = false, bool keepalive = false);
     future<> do_accepts(int which, bool keepalive, socket_address server_addr);
     future<> stop();
+    const gms::feature_service& features() const noexcept { return _features; }
 public:
     using response = cql_transport::response;
 private:

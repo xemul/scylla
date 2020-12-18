@@ -35,6 +35,7 @@
 #include "dht/token-sharding.hh"
 #include "service/migration_manager.hh"
 #include "service/storage_service.hh"
+#include "database.hh"
 #include "db/consistency_level_type.hh"
 #include "db/write_type.hh"
 #include <seastar/core/future-util.hh>
@@ -148,8 +149,9 @@ event::event_type parse_event_type(const sstring& value)
 }
 
 cql_server::cql_server(distributed<cql3::query_processor>& qp, auth::service& auth_service,
-        service::migration_notifier& mn, cql_server_config config)
+        service::migration_notifier& mn, database& db, cql_server_config config)
     : _query_processor(qp)
+    , _features(db.features())
     , _config(config)
     , _max_request_size(config.max_request_size)
     , _max_concurrent_requests(config.get_max_concurrent_requests_updateable_value())
