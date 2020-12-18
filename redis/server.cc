@@ -148,7 +148,7 @@ redis_server::connection::connection(redis_server& server, socket_address server
     , _fd(std::move(fd))
     , _read_buf(_fd.input())
     , _write_buf(_fd.output())
-    , _options(server._config._read_consistency_level, server._config._write_consistency_level, server._config._timeout_config, server._auth_service, addr, server._total_redis_db_count)
+    , _options(server._config._read_consistency_level, server._config._write_consistency_level, server._config._timeout_config, server._auth_service, server._proxy.local().features(), addr, server._total_redis_db_count)
 {
     ++_server._stats._total_connections;
     ++_server._stats._current_connections;

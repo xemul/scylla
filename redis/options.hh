@@ -36,6 +36,10 @@ namespace service {
 class storage_proxy;
 }
 
+namespace gms {
+class feature_service;
+}
+
 namespace redis {
 
 class redis_options {
@@ -54,6 +58,7 @@ public:
         const db::consistency_level wcl,
         const timeout_config& tc,
         auth::service& auth,
+        const gms::feature_service& features,
         const socket_address addr,
         size_t total_redis_db_count)
         :_ks_name("REDIS_0")
@@ -69,6 +74,7 @@ public:
         const db::consistency_level wcl,
         const timeout_config& tc,
         auth::service& auth,
+        const gms::feature_service& features,
         const socket_address addr,
         size_t total_redis_db_count)
         :_ks_name(ks_name)
