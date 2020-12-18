@@ -124,7 +124,7 @@ private:
     struct core_local_state {
         service::client_state client_state;
 
-        core_local_state(auth::service& auth_service)
+        core_local_state(auth::service& auth_service, gms::feature_service& features)
             : client_state(service::client_state::external_tag{}, auth_service)
         {
             client_state.set_login(auth::authenticated_user(testing_superuser));
@@ -341,7 +341,7 @@ public:
     }
 
     future<> start() {
-        return _core_local.start(std::ref(_auth_service));
+        return _core_local.start(std::ref(_auth_service), std::ref(_feature_service));
     }
 
     future<> stop() {
