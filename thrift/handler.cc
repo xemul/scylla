@@ -220,7 +220,7 @@ public:
     explicit thrift_handler(distributed<database>& db, distributed<cql3::query_processor>& qp, auth::service& auth_service, ::timeout_config timeout_config)
         : _db(db)
         , _query_processor(qp)
-        , _client_state(service::client_state::external_tag{}, auth_service, socket_address(), true)
+        , _client_state(service::client_state::external_tag{}, auth_service, _db.local().features(), socket_address(), true)
         , _query_state(_client_state, /*FIXME: pass real permit*/empty_service_permit())
         , _timeout_config(timeout_config)
     { }

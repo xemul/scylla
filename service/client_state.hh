@@ -60,6 +60,10 @@ namespace auth {
 class resource;
 }
 
+namespace gms {
+class feature_service;
+}
+
 namespace service {
 
 /**
@@ -169,7 +173,7 @@ public:
         _driver_version = std::move(driver_version);
     }
 
-    client_state(external_tag, auth::service& auth_service, const socket_address& remote_address = socket_address(), bool thrift = false)
+    client_state(external_tag, auth::service& auth_service, const gms::feature_service& features, const socket_address& remote_address = socket_address(), bool thrift = false)
             : _options()
             , _remote_address(remote_address)
             , _auth_service(&auth_service) {
