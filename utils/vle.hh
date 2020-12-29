@@ -23,6 +23,8 @@
 
 namespace utils {
 
+static constexpr uint32_t uleb32_max_encoded_value = 0xffff;
+
 static inline size_t uleb32_encoded_size(uint32_t val) noexcept {
     return log2floor(val) / 6;
 }

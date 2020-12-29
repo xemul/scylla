@@ -204,6 +204,8 @@ uint32_t
 migrate_fn_type::register_migrator(migrate_fn_type* m) {
     auto& migrators = *debug::static_migrators;
     auto idx = migrators.add(m);
+    // object_descriptor encodes 2*index()+1 with uleb, so it must fit
+    assert(2 * idx + 1 <= utils::uleb32_max_encoded_value);
     m->_migrators = migrators.shared_from_this();
     return idx;
 }
@@ -493,6 +495,7 @@ static constexpr size_t min_free_space_for_compaction = segment_size - max_used_
 
 static_assert(min_free_space_for_compaction >= max_managed_object_size,
     "Segments which cannot fit max_managed_object_size must not be considered compactible for the sake of forward progress of compaction");
+static_assert(max_managed_object_size <= utils::uleb32_max_encoded_value);
 
 // Since we only compact if there's >= min_free_space_for_compaction of free space,
 // we use min_free_space_for_compaction as the histogram's minimum size and put
@@ -1026,6 +1029,7 @@ class region_impl final : public basic_region_impl {
         { }
 
         static object_descriptor make_dead(size_t size) {
+            // size fits into uleb32_max_encoded_value becase of max_managed_object_size
             return object_descriptor(size * 2);
         }
 
