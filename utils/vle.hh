@@ -23,7 +23,11 @@
 
 #include <seastar/core/bitops.hh>
 
+#if defined(__x86_64__) && !defined(SEASTAR_ASAN_ENABLED)
+#define ULEB64_EXPRESS true
+#else
 #define ULEB64_EXPRESS false
+#endif
 
 namespace utils {
 
