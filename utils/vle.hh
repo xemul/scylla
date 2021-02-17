@@ -23,7 +23,16 @@
 
 #include <seastar/core/bitops.hh>
 
+#define ULEB64_EXPRESS false
+
 namespace utils {
+
+/*
+ * The express encoder below is optimized to encode a value
+ * that may only have non-zeroes in its first 12 bits
+ */
+static constexpr size_t uleb64_express_bits = 12;
+static constexpr uint32_t uleb64_express_supreme = 1 << uleb64_express_bits;
 
 static inline size_t uleb64_encoded_size(uint32_t val) noexcept {
     return seastar::log2floor(val) / 6;
@@ -64,6 +73,36 @@ static inline void uleb64_encode(char*& pos, uint32_t val, size_t encoded_size, 
     } while (encoded_size);
     poison(start, pos - start);
 }
+
+#if ULEB64_EXPRESS
+static inline void uleb64_express_encode_impl(char*& pos, uint64_t val, size_t size) noexcept {
+    static_assert(uleb64_express_bits == 12);
+
+    uint64_t* x = reinterpret_cast<uint64_t*>(pos);
+    *x = ((val >> 6) & 0x3f) << 8 | ((val & 0x3f) | 64);
+    if (size > sizeof(uint64_t)) {
+        *reinterpret_cast<uint64_t*>(pos + sizeof(uint64_t)) = 0;
+    }
+    pos += size;
+    pos[-1] |= 0x80;
+}
+
+template <typename Poison, typename Unpoison>
+requires std::is_invocable<Poison, const char*, size_t>::value && std::is_invocable<Unpoison, const char*, size_t>::value
+static inline void uleb64_express_encode(char*& pos, uint32_t val, size_t encoded_size, size_t gap, Poison&& poison, Unpoison&& unpoison) noexcept {
+    if (encoded_size + gap > sizeof(uint64_t)) {
+        uleb64_express_encode_impl(pos, val, encoded_size);
+    } else {
+        uleb64_encode(pos, val, encoded_size, poison, unpoison);
+    }
+}
+#else
+template <typename Poison, typename Unpoison>
+requires std::is_invocable<Poison, const char*, size_t>::value && std::is_invocable<Unpoison, const char*, size_t>::value
+static inline void uleb64_express_encode(char*& pos, uint32_t val, size_t encoded_size, size_t gap, Poison&& poison, Unpoison&& unpoison) noexcept {
+    uleb64_encode(pos, val, encoded_size, poison, unpoison);
+}
+#endif
 
 template <typename Poison, typename Unpoison>
 requires std::is_invocable<Poison, const char*, size_t>::value && std::is_invocable<Unpoison, const char*, size_t>::value
