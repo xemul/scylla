@@ -68,6 +68,8 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
         partition_snapshot::change_mark _change_mark;
         std::vector<rows_position> _clustering_rows;
 
+        range_tombstone_stream _rt_stream;
+
         bool _digest_requested;
     private:
         template<typename Function>
@@ -77,14 +79,13 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
             });
         }
         void refresh_state(const query::clustering_range& ck_range,
-                           const std::optional<position_in_partition>& last_row,
-                           range_tombstone_stream& range_tombstones) {
+                           const std::optional<position_in_partition>& last_row) {
             _clustering_rows.clear();
 
             if (!last_row) {
                 // New range. Collect all relevant range tombstone.
                 for (auto&& v : _snapshot->versions()) {
-                    range_tombstones.apply(v.partition().row_tombstones(), ck_range);
+                    _rt_stream.apply(v.partition().row_tombstones(), ck_range);
                 }
             }
 
@@ -130,13 +131,14 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
                                       logalloc::region& region, logalloc::allocating_section& read_section,
                                       bool digest_requested)
             : _schema(s)
-            , _permit(std::move(permit))
+            , _permit(permit)
             , _cmp(s)
             , _eq(s)
             , _heap_cmp(s)
             , _snapshot(std::move(snp))
             , _region(region)
             , _read_section(read_section)
+            , _rt_stream(s, permit)
             , _digest_requested(digest_requested)
         { }
 
@@ -161,15 +163,14 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
         // to be engaged and equal the position of the row returned last time.
         // If the ck_range is different or this is the first call to this
         // function last_row has to be disengaged. Additionally, when entering
-        // new range range_tombstones will be populated with all relevant
+        // new range _rt_stream will be populated with all relevant
         // tombstones.
         mutation_fragment_opt next_row(const query::clustering_range& ck_range,
-                                       const std::optional<position_in_partition>& last_row,
-                                       range_tombstone_stream& range_tombstones) {
+                                       const std::optional<position_in_partition>& last_row) {
             return in_alloc_section([&] () -> mutation_fragment_opt {
                 auto mark = _snapshot->get_change_mark();
                 if (!last_row || mark != _change_mark) {
-                    refresh_state(ck_range, last_row, range_tombstones);
+                    refresh_state(ck_range, last_row);
                     _change_mark = mark;
                 }
                 while (has_more_rows()) {
@@ -195,6 +196,10 @@ class partition_snapshot_flat_reader : public flat_mutation_reader::impl, public
                 return { };
             });
         }
+
+        mutation_fragment_opt next_range_rombstone(position_in_partition_view pos) {
+            return _rt_stream.get_next(std::move(pos));
+        }
     };
 private:
     // Keeps shared pointer to the container we read mutation from to make sure
@@ -207,7 +212,6 @@ private:
 
     std::optional<position_in_partition> _last_entry;
     mutation_fragment_opt _next_row;
-    range_tombstone_stream _range_tombstones;
 
     lsa_partition_reader _reader;
     bool _static_row_done = false;
@@ -226,11 +230,11 @@ private:
 
     mutation_fragment_opt read_next() {
         if (!_next_row && !_no_more_rows_in_current_range) {
-            _next_row = _reader.next_row(*_current_ck_range, _last_entry, _range_tombstones);
+            _next_row = _reader.next_row(*_current_ck_range, _last_entry);
         }
         if (_next_row) {
             auto pos_view = _next_row->as_clustering_row().position();
-            auto mf = _range_tombstones.get_next(pos_view);
+            auto mf = _reader.next_range_rombstone(pos_view);
             if (mf) {
                 return mf;
             }
@@ -238,7 +242,7 @@ private:
             return std::exchange(_next_row, {});
         } else {
             _no_more_rows_in_current_range = true;
-            return _range_tombstones.get_next(position_in_partition_view::for_range_end(*_current_ck_range));
+            return _reader.next_range_rombstone(position_in_partition_view::for_range_end(*_current_ck_range));
         }
     }
 
@@ -282,7 +286,6 @@ public:
         , _ck_ranges(std::move(crr))
         , _current_ck_range(_ck_ranges.begin())
         , _ck_range_end(_ck_ranges.end())
-        , _range_tombstones(*_schema, _permit)
         , _reader(*_schema, _permit, std::move(snp), region, read_section, digest_requested)
     {
         _reader.with_reserve([&] {
