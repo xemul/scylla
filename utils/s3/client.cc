@@ -12,7 +12,10 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_future.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/net/dns.hh>
+#include <seastar/net/tls.hh>
 #include <seastar/util/short_streams.hh>
 #include <seastar/http/request.hh>
 #include "utils/s3/client.hh"
@@ -42,11 +45,77 @@ future<> ignore_reply(const http::reply& rep, input_stream<char>&& in_) {
     co_await util::skip_entire_stream(in);
 }
 
+class dns_connection_factory : public http::experimental::connection_factory {
+protected:
+    std::string _host;
+    int _port;
+    struct state {
+        bool initialized = false;
+        socket_address addr;
+        ::shared_ptr<tls::certificate_credentials> creds;
+        shared_future<> done;
+
+        state(future<> f) : done(std::move(f)) {}
+    };
+    ::shared_ptr<state> _state;
+
+    void initialize(bool https) {
+        promise<> initialized;
+        _state = ::make_shared<state>(initialized.get_future());
+        when_all(
+            net::dns::get_host_by_name(_host, net::inet_address::family::INET).then([port = _port] (::net::hostent&& h) {
+                return make_ready_future<socket_address>(socket_address(h.addr_list.front(), port));
+            }),
+            [https] () -> future<::shared_ptr<tls::certificate_credentials>> {
+                if (!https) {
+                    auto nil = ::shared_ptr<tls::certificate_credentials>();
+                    return make_ready_future<::shared_ptr<tls::certificate_credentials>>(nil);
+                }
+
+                return do_with(tls::credentials_builder(), [] (auto& cbuild) {
+                    return cbuild.set_x509_trust_file("/etc/ssl/certs/ca-certificates.crt", tls::x509_crt_format::PEM).then([&cbuild] {
+                        auto creds = cbuild.build_certificate_credentials();
+                        return make_ready_future<::shared_ptr<tls::certificate_credentials>>(std::move(creds));
+                    });
+                });
+            }()
+        ).then([state = _state] (auto res_tuple) {
+            state->addr = std::get<0>(res_tuple).get0();
+            state->creds = std::get<1>(res_tuple).get0();
+            state->initialized = true;
+            s3l.debug("Initialized factory, address={} tls={}", state->addr, state->creds == nullptr ? "no" : "yes");
+        }).forward_to(std::move(initialized));
+    }
+
+public:
+    dns_connection_factory(std::string host, int port, bool https)
+        : _host(std::move(host))
+        , _port(port)
+    {
+        initialize(https);
+    }
+
+    virtual future<connected_socket> make() override {
+        if (!_state->initialized) {
+            s3l.debug("Waiting for factory to initialize");
+            co_await _state->done.get_future();
+        }
+
+        if (_state->creds) {
+            s3l.debug("Making new HTTPS connection addr={} host={}", _state->addr, _host);
+            co_return co_await tls::connect(_state->creds, _state->addr, _host);
+        } else {
+            s3l.debug("Making new HTTP connection");
+            co_return co_await seastar::connect(_state->addr, {}, transport::TCP);
+        }
+    }
+};
+
 client::client(std::string host, int port, std::optional<aws_creds> creds, private_tag)
         : _host(std::move(host))
         , _port(port)
         , _creds(std::move(creds))
-        , _http(ipv4_addr(_host, _port))
+        , _http(std::make_unique<dns_connection_factory>(_host, _port, (bool)_creds))
 {
     s3l.debug("Initialized client for {}:{}, creds={}", _host, _port, (bool)_creds);
 }
