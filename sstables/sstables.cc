@@ -3302,8 +3302,8 @@ class sstable::s3_storage final : public sstable::storage {
     future<> ensure_remote_prefix(const sstable& sst);
 
 public:
-    s3_storage(sstring host, sstring bucket, sstring dir)
-        : _client(s3::client::make(ipv4_addr(host)))
+    s3_storage(sstring endpoint, sstring bucket, sstring dir)
+        : _client(s3::client::make(std::move(endpoint)))
         , _bucket(std::move(bucket))
         , _location(std::move(dir))
     {

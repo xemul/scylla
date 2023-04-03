@@ -52,7 +52,7 @@ class MinioServer:
 
         self.address = await self.hosts.lease_host()
         self.log_file = self.log_filename.open("wb")
-        os.environ['MINIO_SERVER_ADDRESS'] = f'{self.address}'
+        os.environ['MINIO_SERVER_ADDRESS'] = f'{self.address}:9000'
         os.environ['MINIO_PUBLIC_BUCKET'] = f'{self.bucket_name}'
 
         self.logger.info(f'Starting minio server at {self.address}:{self.port}')
