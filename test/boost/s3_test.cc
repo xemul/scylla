@@ -20,13 +20,13 @@
 
 /*
  * Tests below expect minio server to be running on localhost
- * with the bucket named "testbucket" created with unrestricted
- * anonymous read-write access
+ * with the bucket named env['MINIO_PUBLIC_BUCKET'] created with
+ * unrestricted anonymous read-write access
  */
 
 SEASTAR_THREAD_TEST_CASE(test_client_put_get_object) {
     const ipv4_addr s3_server(::getenv("MINIO_SERVER_ADDRESS"), 9000);
-    const sstring name(fmt::format("/testbucket/testobject-{}", ::getpid()));
+    const sstring name(fmt::format("/{}/testobject-{}", ::getenv("MINIO_PUBLIC_BUCKET"), ::getpid()));
 
     testlog.info("Make client\n");
     auto cln = s3::client::make(s3_server);
@@ -59,7 +59,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_put_get_object) {
 
 SEASTAR_THREAD_TEST_CASE(test_client_multipart_upload) {
     const ipv4_addr s3_server(::getenv("MINIO_SERVER_ADDRESS"), 9000);
-    const sstring name(fmt::format("/testbucket/testlargeobject-{}", ::getpid()));
+    const sstring name(fmt::format("/{}/testlargeobject-{}", ::getenv("MINIO_PUBLIC_BUCKET"), ::getpid()));
 
     testlog.info("Make client\n");
     auto cln = s3::client::make(s3_server);
@@ -110,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_multipart_upload) {
 
 SEASTAR_THREAD_TEST_CASE(test_client_readable_file) {
     const ipv4_addr s3_server(::getenv("MINIO_SERVER_ADDRESS"), 9000);
-    const sstring name(fmt::format("/testbucket/testroobject-{}", ::getpid()));
+    const sstring name(fmt::format("/{}/testroobject-{}", ::getenv("MINIO_PUBLIC_BUCKET"), ::getpid()));
 
     testlog.info("Make client\n");
     auto cln = s3::client::make(s3_server);
