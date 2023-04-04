@@ -7,11 +7,14 @@
  */
 
 #include <gnutls/crypto.h>
+#include <seastar/util/log.hh>
 #include "utils/aws_sigv4.hh"
 #include "utils/hashers.hh"
 #include "db_clock.hh"
 
 using namespace std::chrono_literals;
+
+static seastar::logger alog("aws");
 
 namespace utils {
 namespace aws {
@@ -98,10 +101,12 @@ std::string get_signature(std::string_view access_key_id, std::string_view secre
 
     std::string payload_hash = apply_sha256(body_content);
     std::string canonical_request = fmt::format("{}\n{}\n{}\n{}\n{}\n{}", method, canonical_uri, query_string, canonical_headers.str(), signed_headers_str, payload_hash);
+    alog.debug("Canonical request: [{}]", canonical_request);
 
     std::string_view algorithm = "AWS4-HMAC-SHA256";
     std::string credential_scope = fmt::format("{}/{}/{}/aws4_request", datestamp, region, service);
     std::string string_to_sign = fmt::format("{}\n{}\n{}\n{}", algorithm, amz_date, credential_scope,  apply_sha256(canonical_request));
+    alog.debug("String to sign: [{}]", string_to_sign);
 
     hmac_sha256_digest signing_key = get_signature_key(secret_access_key, datestamp, region, service);
     hmac_sha256_digest signature = hmac_sha256(std::string_view(signing_key.data(), signing_key.size()), string_to_sign);
