@@ -42,20 +42,32 @@ future<> ignore_reply(const http::reply& rep, input_stream<char>&& in_) {
     co_await util::skip_entire_stream(in);
 }
 
-client::client(std::string host, int port, private_tag)
+client::client(std::string host, int port, std::optional<aws_creds> creds, private_tag)
         : _host(std::move(host))
         , _port(port)
+        , _creds(std::move(creds))
         , _http(ipv4_addr(_host, _port))
 {
+    s3l.debug("Initialized client for {}:{}, creds={}", _host, _port, (bool)_creds);
 }
 
 shared_ptr<client> client::make(std::string endpoint) {
+    std::optional<aws_creds> creds;
     std::vector<std::string> items;
     boost::split(items, endpoint, boost::is_any_of(":"));
-    if (items.size() != 2) {
+
+    if (items.size() == 2) {
+        auto key = ::getenv("AWS_ACCESS_KEY");
+        if (key) {
+            creds.emplace(aws_creds{ std::move(key), ::getenv("AWS_SECRET_KEY"), ::getenv("AWS_CLIENT_REGION") });
+        }
+    } else if (items.size() == 5) {
+        creds.emplace(aws_creds{ std::move(items[2]), std::move(items[3]), std::move(items[4]) });
+    } else {
         throw std::runtime_error("Invalid endpoint format, expected host:port");
     }
-    return seastar::make_shared<client>(std::move(items[0]), std::stoul(items[1]),  private_tag{});
+
+    return seastar::make_shared<client>(std::move(items[0]), std::stoul(items[1]), std::move(creds), private_tag{});
 }
 
 future<uint64_t> client::get_object_size(sstring object_name) {
@@ -425,27 +437,29 @@ public:
     class readable_file_handle_impl final : public file_handle_impl {
         std::string _host;
         int _port;
+        std::optional<aws_creds> _creds;
         sstring _object_name;
 
     public:
-        readable_file_handle_impl(std::string host, int port, sstring object_name)
+        readable_file_handle_impl(std::string host, int port, std::optional<client::aws_creds> creds, sstring object_name)
                 : _host(std::move(host))
                 , _port(port)
+                , _creds(std::move(creds))
                 , _object_name(std::move(object_name))
         {}
 
         virtual std::unique_ptr<file_handle_impl> clone() const override {
-            return std::make_unique<readable_file_handle_impl>(_host, _port, _object_name);
+            return std::make_unique<readable_file_handle_impl>(_host, _port, _creds, _object_name);
         }
 
         virtual shared_ptr<file_impl> to_file() && override {
-            auto client = seastar::make_shared<s3::client>(std::move(_host), _port, client::private_tag{});
+            auto client = seastar::make_shared<s3::client>(std::move(_host), _port, std::move(_creds), client::private_tag{});
             return make_shared<readable_file>(std::move(client), std::move(_object_name));
         }
     };
 
     virtual std::unique_ptr<file_handle_impl> dup() override {
-        return std::make_unique<readable_file_handle_impl>(_client->_host, _client->_port, _object_name);
+        return std::make_unique<readable_file_handle_impl>(_client->_host, _client->_port, _client->_creds, _object_name);
     }
 
     virtual future<uint64_t> size(void) override {

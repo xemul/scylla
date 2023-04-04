@@ -22,16 +22,23 @@ struct range {
 };
 
 class client : public enable_shared_from_this<client> {
+    struct aws_creds {
+        std::string key;
+        std::string secret;
+        std::string region;
+    };
+
     class upload_sink;
     class readable_file;
     std::string _host;
     int _port;
+    std::optional<aws_creds> _creds;
     http::experimental::client _http;
 
     struct private_tag {};
 
 public:
-    explicit client(std::string host, int port, private_tag);
+    explicit client(std::string host, int port, std::optional<aws_creds> creds, private_tag);
     static shared_ptr<client> make(std::string endpoint);
 
     future<uint64_t> get_object_size(sstring object_name);
