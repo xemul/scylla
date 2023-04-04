@@ -37,6 +37,7 @@ class client : public enable_shared_from_this<client> {
 
     struct private_tag {};
 
+    void authorize(http::request&);
 public:
     explicit client(std::string host, int port, std::optional<aws_creds> creds, private_tag);
     static shared_ptr<client> make(std::string endpoint);

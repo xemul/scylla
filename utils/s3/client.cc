@@ -21,6 +21,8 @@
 #include "utils/s3/client.hh"
 #include "utils/memory_data_sink.hh"
 #include "utils/chunked_vector.hh"
+#include "utils/aws.hh"
+#include "db_clock.hh"
 #include "log.hh"
 
 namespace utils {
@@ -139,10 +141,40 @@ shared_ptr<client> client::make(std::string endpoint) {
     return seastar::make_shared<client>(std::move(items[0]), std::stoul(items[1]), std::move(creds), private_tag{});
 }
 
+void client::authorize(http::request& req) {
+    if (!_creds) {
+        return;
+    }
+
+    auto time_point_str = utils::aws::format_time_point(db_clock::now());
+    auto time_point_st = time_point_str.substr(0, 8);
+    req._headers["x-amz-date"] = time_point_str;
+    req._headers["x-amz-content-sha256"] = "UNSIGNED-PAYLOAD";
+    std::map<std::string_view, std::string_view> signed_headers;
+    signed_headers["host"] = req._headers["Host"];
+    signed_headers["x-amz-content-sha256"] = req._headers["x-amz-content-sha256"];
+    signed_headers["x-amz-date"] = req._headers["x-amz-date"];
+    sstring signed_headers_list("host;x-amz-content-sha256;x-amz-date");
+    std::vector<temporary_buffer<char>> empty_body;
+    sstring query_string = "";
+    std::map<std::string_view, std::string_view> query_parameters;
+    for (const auto& q : req.query_parameters) {
+        query_parameters[q.first] = q.second;
+    }
+    unsigned query_nr = query_parameters.size();
+    for (const auto& q : query_parameters) {
+        query_string += format("{}={}{}", q.first, q.second, query_nr == 1 ? "" : "&");
+        query_nr--;
+    }
+    auto sig = utils::aws::get_signature(_creds->key, _creds->secret, _host, req._url, req._method, time_point_st, signed_headers_list, signed_headers, empty_body, _creds->region, "s3", query_string, true);
+    req._headers["Authorization"] = format("AWS4-HMAC-SHA256 Credential={}/{}/{}/s3/aws4_request,SignedHeaders={},Signature={}", _creds->key, time_point_st, _creds->region, signed_headers_list, sig);
+}
+
 future<uint64_t> client::get_object_size(sstring object_name) {
     s3l.trace("HEAD {}", object_name);
     auto req = http::request::make("HEAD", _host, object_name);
     uint64_t len = 0;
+    authorize(req);
     co_await _http.make_request(std::move(req), [&len] (const http::reply& rep, input_stream<char>&& in_) mutable -> future<> {
         len = rep.content_length;
         return make_ready_future<>(); // it's HEAD with no body
@@ -164,6 +196,7 @@ future<temporary_buffer<char>> client::get_object_contiguous(sstring object_name
 
     size_t off = 0;
     std::optional<temporary_buffer<char>> ret;
+    authorize(req);
     co_await _http.make_request(std::move(req), [&off, &ret, &object_name] (const http::reply& rep, input_stream<char>&& in_) mutable -> future<> {
         auto in = std::move(in_);
         ret = temporary_buffer<char>(rep.content_length);
@@ -204,6 +237,7 @@ future<> client::put_object(sstring object_name, temporary_buffer<char> buf) {
             co_await coroutine::return_exception_ptr(std::move(ex));
         }
     });
+    authorize(req);
     co_await _http.make_request(std::move(req), ignore_reply);
 }
 
@@ -227,12 +261,14 @@ future<> client::put_object(sstring object_name, ::memory_data_sink_buffers bufs
             co_await coroutine::return_exception_ptr(std::move(ex));
         }
     });
+    authorize(req);
     co_await _http.make_request(std::move(req), ignore_reply);
 }
 
 future<> client::delete_object(sstring object_name) {
     s3l.trace("DELETE {}", object_name);
     auto req = http::request::make("DELETE", _host, object_name);
+    authorize(req);
     co_await _http.make_request(std::move(req), ignore_reply, http::reply::status_type::no_content);
 }
 
@@ -378,6 +414,7 @@ future<> client::upload_sink::start_upload() {
     s3l.trace("POST uploads {}", _object_name);
     auto rep = http::request::make("POST", _client->_host, _object_name);
     rep.query_parameters["uploads"] = "";
+    _client->authorize(rep);
     co_await _http.make_request(std::move(rep), [this] (const http::reply& rep, input_stream<char>&& in_) -> future<> {
         auto in = std::move(in_);
         auto body = co_await util::read_entire_stream_contiguous(in);
@@ -420,6 +457,7 @@ future<> client::upload_sink::upload_part(unsigned part_number, memory_data_sink
     //
     // In case part upload goes wrong and doesn't happen, the _part_etags[part]
     // is not set, so the finalize_upload() sees it and aborts the whole thing.
+    _client->authorize(req);
     auto units = co_await get_units(_flush_sem, 1);
     (void)_http.make_request(std::move(req), [this, part_number] (const http::reply& rep, input_stream<char>&& in_) mutable -> future<> {
         auto etag = rep.get_header("ETag");
@@ -436,6 +474,7 @@ future<> client::upload_sink::abort_upload() {
     s3l.trace("DELETE upload {}", _upload_id);
     auto req = http::request::make("DELETE", _client->_host, _object_name);
     req.query_parameters["uploadId"] = std::move(_upload_id);
+    _client->authorize(req);
     co_await _http.make_request(std::move(req), ignore_reply, http::reply::status_type::no_content);
 }
 
@@ -461,6 +500,7 @@ future<> client::upload_sink::finalize_upload() {
     req.write_body("xml", parts_xml_len, [this] (output_stream<char>&& out) -> future<> {
         return dump_multipart_upload_parts(std::move(out), _part_etags);
     });
+    _client->authorize(req);
     co_await _http.make_request(std::move(req), ignore_reply);
 }
 
