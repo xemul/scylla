@@ -254,6 +254,7 @@ unsigned prepare_multipart_upload_parts(const utils::chunked_vector<sstring>& et
         if (etags.empty()) {
             return 0;
         }
+        // length of the format string - four braces + length of the etag + length of the number
         ret += multipart_upload_complete_entry.size() - 4 + etag.size() + format("{}", nr).size();
         nr++;
     }
