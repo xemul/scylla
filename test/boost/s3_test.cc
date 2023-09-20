@@ -110,7 +110,7 @@ void do_test_client_multipart_upload(bool with_copy_upload) {
     auto out = output_stream<char>(
         // Make it 3 parts per piece, so that 128Mb buffer below
         // would be split into several 15Mb pieces
-        with_copy_upload ? cln->make_upload_jumbo_sink(name, 3) : cln->make_upload_sink(name)
+        with_copy_upload ? cln->make_upload_jumbo_sink(name) : cln->make_upload_sink(name)
     );
     auto close = seastar::deferred_close(out);
 
