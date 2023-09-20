@@ -114,14 +114,14 @@ void do_test_client_multipart_upload(bool with_copy_upload) {
     auto out = output_stream<char>(
         // Make it 3 parts per piece, so that 128Mb buffer below
         // would be split into several 15Mb pieces
-        with_copy_upload ? cln->make_upload_jumbo_sink(name, 3) : cln->make_upload_sink(name)
+        with_copy_upload ? cln->make_upload_jumbo_sink(name) : cln->make_upload_sink(name)
     );
     auto close = seastar::deferred_close(out);
 
     static constexpr unsigned chunk_size = 1000;
     auto rnd = tests::random::get_bytes(chunk_size);
     uint64_t object_size = 0;
-    for (unsigned ch = 0; ch < 128 * 1024; ch++) {
+    for (unsigned ch = 0; ch < 256 * 1024; ch++) {
         out.write(reinterpret_cast<char*>(rnd.begin()), rnd.size()).get();
         object_size += rnd.size();
     }
