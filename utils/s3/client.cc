@@ -179,7 +179,7 @@ client::group_client& client::find_or_create_client() {
 future<> client::make_request(http::request req, http::experimental::client::reply_handler handle, http::reply::status_type expected) {
     authorize(req);
     auto& gc = find_or_create_client();
-    return gc.http.make_request(std::move(req), std::move(handle), expected);
+    return gc.http.make_request(std::move(req), std::move(handle), expected, http::experimental::retry_param{ .max_count = 4 });
 }
 
 future<> client::make_request(http::request req, reply_handler_ext handle_ex, http::reply::status_type expected) {
@@ -188,7 +188,7 @@ future<> client::make_request(http::request req, reply_handler_ext handle_ex, ht
     auto handle = [&gc, handle = std::move(handle_ex)] (const http::reply& rep, input_stream<char>&& in) {
         return handle(gc, rep, std::move(in));
     };
-    return gc.http.make_request(std::move(req), std::move(handle), expected);
+    return gc.http.make_request(std::move(req), std::move(handle), expected, http::experimental::retry_param{ .max_count = 4 });
 }
 
 future<> client::get_object_header(sstring object_name, http::experimental::client::reply_handler handler) {
