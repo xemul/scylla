@@ -2749,29 +2749,85 @@ mutation system_keyspace::make_cleanup_candidate_mutation(std::optional<cdc::gen
     return m;
 }
 
+struct sstables_registry_mutation_builder {
+    api::timestamp_type _ts;
+    schema_ptr _s;
+    mutation _m;
+    clustering_key _ck;
+
+    sstables_registry_mutation_builder(std::string_view location, sstables::generation_type gen)
+        : _ts(api::new_timestamp())
+        , _s(system_keyspace::sstables_registry())
+        , _m(_s, partition_key::from_single_value(*_s, utf8_type->decompose(location)))
+        , _ck(clustering_key::from_single_value(*_s, data_value(gen).serialize_nonnull()))
+    {}
+
+    auto& with_status(std::string_view status) {
+        _m.set_clustered_cell(_ck, "status", status, _ts);
+        return *this;
+    }
+
+    auto& with_state(sstables::sstable_state state) {
+        _m.set_clustered_cell(_ck, "state", sstables::state_to_dir(state), _ts);
+        return *this;
+    }
+
+    auto& with_version(sstables::sstable_version_types ver) {
+        _m.set_clustered_cell(_ck, "version", fmt::to_string(ver), _ts);
+        return *this;
+    }
+
+    auto& with_format(sstables::sstable_format_types f) {
+        _m.set_clustered_cell(_ck, "format", fmt::to_string(f), _ts);
+        return *this;
+    }
+
+    auto& with_tombstone() {
+        _m.partition().apply_delete(*_s, _ck, tombstone(_ts, gc_clock::now()));
+        return *this;
+    }
+
+    mutation build() {
+        return std::move(_m);
+    }
+};
+
+future<> system_keyspace::sstables_registry_apply_mutation(sstables_registry_mutation_builder& builder) {
+    auto m = builder.build();
+    auto shard = _db.find_column_family(m.schema()).shard_of(m);
+    co_await container().invoke_on(shard, [m_ = freeze(m)] (auto& sys_ks) -> future<> {
+        std::vector<frozen_mutation> m;
+        m.emplace_back(std::move(m_));
+        co_await sys_ks._db.apply(m, db::no_timeout);
+    });
+}
+
 future<> system_keyspace::sstables_registry_create_entry(sstring location, sstring status, sstables::sstable_state state, sstables::entry_descriptor desc) {
-    static const auto req = format("INSERT INTO system.{} (location, generation, status, state, version, format) VALUES (?, ?, ?, ?, ?, ?)", SSTABLES_REGISTRY);
     slogger.trace("Inserting {}.{} into {}", location, desc.generation, SSTABLES_REGISTRY);
-    co_await execute_cql(req, location, desc.generation, status, sstables::state_to_dir(state), fmt::to_string(desc.version), fmt::to_string(desc.format)).discard_result();
+    auto b = sstables_registry_mutation_builder(location, desc.generation)
+                .with_format(desc.format)
+                .with_version(desc.version)
+                .with_status(status)
+                .with_state(state);
+    co_await sstables_registry_apply_mutation(b);
 }
 
 future<> system_keyspace::sstables_registry_update_entry_status(sstring location, sstables::generation_type gen, sstring status) {
-    static const auto req = format("UPDATE system.{} SET status = ? WHERE location = ? AND generation = ?", SSTABLES_REGISTRY);
     slogger.trace("Updating {}.{} -> status={} in {}", location, gen, status, SSTABLES_REGISTRY);
-    co_await execute_cql(req, status, location, gen).discard_result();
+    auto b = sstables_registry_mutation_builder(location, gen).with_status(status);
+    co_await sstables_registry_apply_mutation(b);
 }
 
 future<> system_keyspace::sstables_registry_update_entry_state(sstring location, sstables::generation_type gen, sstables::sstable_state state) {
-    static const auto req = format("UPDATE system.{} SET state = ? WHERE location = ? AND generation = ?", SSTABLES_REGISTRY);
-    auto new_state = sstables::state_to_dir(state);
-    slogger.trace("Updating {}.{} -> state={} in {}", location, gen, new_state, SSTABLES_REGISTRY);
-    co_await execute_cql(req, new_state, location, gen).discard_result();
+    slogger.trace("Updating {}.{} -> state={} in {}", location, gen, sstables::state_to_dir(state), SSTABLES_REGISTRY);
+    auto b = sstables_registry_mutation_builder(location, gen).with_state(state);
+    co_await sstables_registry_apply_mutation(b);
 }
 
 future<> system_keyspace::sstables_registry_delete_entry(sstring location, sstables::generation_type gen) {
-    static const auto req = format("DELETE FROM system.{} WHERE location = ? AND generation = ?", SSTABLES_REGISTRY);
     slogger.trace("Removing {}.{} from {}", location, gen, SSTABLES_REGISTRY);
-    co_await execute_cql(req, location, gen).discard_result();
+    auto b = sstables_registry_mutation_builder(location, gen).with_tombstone();
+    co_await sstables_registry_apply_mutation(b);
 }
 
 future<> system_keyspace::sstables_registry_list(sstring location, sstable_registry_entry_consumer consumer) {

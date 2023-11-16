@@ -88,6 +88,7 @@ future<> drop_column_mapping(db::system_keyspace& sys_ks, table_id table_id, tab
 }
 
 class config;
+struct sstables_registry_mutation_builder;
 struct local_cache;
 
 using system_keyspace_view_name = std::pair<sstring, sstring>;
@@ -518,6 +519,10 @@ public:
     // Assumes that the history table exists, i.e. Raft experimental feature is enabled.
     static future<mutation> get_group0_history(distributed<replica::database>&);
 
+private:
+    future<> sstables_registry_apply_mutation(sstables_registry_mutation_builder&);
+
+public:
     future<> sstables_registry_create_entry(sstring location, sstring status, sstables::sstable_state state, sstables::entry_descriptor desc);
     future<> sstables_registry_update_entry_status(sstring location, sstables::generation_type gen, sstring status);
     future<> sstables_registry_update_entry_state(sstring location, sstables::generation_type gen, sstables::sstable_state state);
