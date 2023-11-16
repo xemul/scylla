@@ -1401,6 +1401,8 @@ To start the scylla server proper, simply invoke as: scylla server (or just scyl
             });
 
             ss.invoke_on_all(&service::storage_service::set_query_processor, std::ref(qp)).get();
+            sys_ks.local().plug_raft_client(group0_client);
+            auto unplug_rc = defer([] () noexcept { sys_ks.local().unplug_raft_client(); });
 
             // #293 - do not stop anything
             // engine().at_exit([&qp] { return qp.stop(); });

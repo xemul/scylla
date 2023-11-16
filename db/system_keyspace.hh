@@ -35,6 +35,7 @@ namespace service {
 
 class storage_service;
 class raft_group_registry;
+class raft_group0_client;
 struct topology;
 struct topology_features;
 
@@ -112,6 +113,7 @@ class system_keyspace : public seastar::peering_sharded_service<system_keyspace>
     cql3::query_processor& _qp;
     replica::database& _db;
     std::unique_ptr<local_cache> _cache;
+    service::raft_group0_client* _raft_client = nullptr; // See comment near plug_raft_client() for details
 
     static schema_ptr raft_snapshot_config();
     static schema_ptr local();
@@ -274,6 +276,23 @@ public:
     // schema commitlog replay. We do table.flush in this case, so it's rather slow and heavyweight.
     future<> set_scylla_local_param(const sstring& key, const sstring& value, bool visible_before_cl_replay);
     future<std::optional<sstring>> get_scylla_local_param(const sstring& key);
+
+    // Start sequence
+    //
+    // - system keyspace
+    // - user keyspaces
+    // - raft group0 client
+    // - system distributed keyspace
+    //
+    // Now why this matters here. The system.sstables needs to be replicated over raft. This makes
+    // it effectively belong to system_distributed keyspace, and the latter is started after raft,
+    // so it seems that both system.sstables and raft client should be there. However, in order
+    // to start user keyspaces we need system.sstables. This makes system.sstables operate in two
+    // modes. First, they are started read-only with other system tables, next raft is started and
+    // plugs its client to system keyspace thus making system.sstables writeable.
+    //
+    void plug_raft_client(service::raft_group0_client& rc) noexcept { _raft_client = &rc; }
+    void unplug_raft_client() noexcept { _raft_client = nullptr; }
 
 private:
     // Saves the key-value pair into system.scylla_local table.
