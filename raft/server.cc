@@ -847,6 +847,7 @@ void server_impl::notify_waiters(std::map<index_t, op_status>& waiters,
 
         waiters.erase(it);
         if (status.term == entries[entry_idx - first_idx]->term) {
+            logger.trace("[{}] notify waiters {}.{}", id(), status.term, entry_idx);
             status.done.set_value();
         } else {
             // The terms do not match which means that between the

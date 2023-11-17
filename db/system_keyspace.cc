@@ -2794,11 +2794,18 @@ struct sstables_registry_mutation_builder {
 
 future<> system_keyspace::sstables_registry_apply_mutation(sstables_registry_mutation_builder& builder) {
     auto m = builder.build();
-    auto shard = _db.find_column_family(m.schema()).shard_of(m);
-    co_await container().invoke_on(shard, [m_ = freeze(m)] (auto& sys_ks) -> future<> {
-        std::vector<frozen_mutation> m;
-        m.emplace_back(std::move(m_));
-        co_await sys_ks._db.apply(m, db::no_timeout);
+    canonical_mutation cm(m);
+
+    co_await container().invoke_on(0, [&m, &cm] (auto& sys_ks) mutable -> future<> {
+        if (!sys_ks._raft_client) {
+            on_internal_error(slogger, "Raft client not plugged for system.sstables update");
+        }
+
+        slogger.info("Applying system.sstables mutations({}) via raft", m);
+        service::write_mutations change{{cm}};
+        auto cmd = sys_ks._raft_client->prepare_command(std::move(change), "system.sstables update");
+        co_await sys_ks._raft_client->add_entry_unguarded(std::move(cmd));
+        slogger.info("-> Applied system.sstables mutations({}) via raft", m);
     });
 }
 
@@ -2814,6 +2821,12 @@ future<> system_keyspace::sstables_registry_create_entry(sstring location, sstri
 
 future<> system_keyspace::sstables_registry_update_entry_status(sstring location, sstables::generation_type gen, sstring status) {
     slogger.trace("Updating {}.{} -> status={} in {}", location, gen, status, SSTABLES_REGISTRY);
+    if (status == "removing") {
+        slogger.info("Updating {}.{} -> status={} in {} {}", location, gen, status, SSTABLES_REGISTRY, current_backtrace());
+        static const auto req = format("UPDATE system.{} SET status = ? WHERE location = ? AND generation = ?", SSTABLES_REGISTRY);
+        co_await execute_cql(req, status, location, gen).discard_result();
+        co_return;
+    }
     auto b = sstables_registry_mutation_builder(location, gen).with_status(status);
     co_await sstables_registry_apply_mutation(b);
 }
@@ -2825,9 +2838,9 @@ future<> system_keyspace::sstables_registry_update_entry_state(sstring location,
 }
 
 future<> system_keyspace::sstables_registry_delete_entry(sstring location, sstables::generation_type gen) {
-    slogger.trace("Removing {}.{} from {}", location, gen, SSTABLES_REGISTRY);
-    auto b = sstables_registry_mutation_builder(location, gen).with_tombstone();
-    co_await sstables_registry_apply_mutation(b);
+    static const auto req = format("DELETE FROM system.{} WHERE location = ? AND generation = ?", SSTABLES_REGISTRY);
+    slogger.info("Removing {}.{} from {}", location, gen, SSTABLES_REGISTRY);
+    co_await execute_cql(req, location, gen).discard_result();
 }
 
 future<> system_keyspace::sstables_registry_list(sstring location, sstable_registry_entry_consumer consumer) {
