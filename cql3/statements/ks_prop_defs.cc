@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: (AGPL-3.0-or-later and Apache-2.0)
  */
 
+#include "gms/feature_service.hh"
 #include "cql3/statements/ks_prop_defs.hh"
 #include "data_dictionary/data_dictionary.hh"
 #include "data_dictionary/keyspace_metadata.hh"
@@ -21,6 +22,7 @@ namespace statements {
 static std::map<sstring, sstring> prepare_options(
         const sstring& strategy_class,
         const locator::token_metadata& tm,
+        const gms::feature_service& feat,
         std::map<sstring, sstring> options,
         const std::map<sstring, sstring>& old_options = {}) {
     options.erase(ks_prop_defs::REPLICATION_STRATEGY_CLASS_KEY);
@@ -114,7 +116,7 @@ std::optional<sstring> ks_prop_defs::get_replication_strategy_class() const {
 lw_shared_ptr<data_dictionary::keyspace_metadata> ks_prop_defs::as_ks_metadata(sstring ks_name, const locator::token_metadata& tm, const gms::feature_service& feat) {
     auto sc = get_replication_strategy_class().value();
     return data_dictionary::keyspace_metadata::new_keyspace(ks_name, sc,
-            prepare_options(sc, tm, get_replication_options()), get_boolean(KW_DURABLE_WRITES, true), std::vector<schema_ptr>{}, get_storage_options());
+            prepare_options(sc, tm, feat, get_replication_options()), get_boolean(KW_DURABLE_WRITES, true), std::vector<schema_ptr>{}, get_storage_options());
 }
 
 lw_shared_ptr<data_dictionary::keyspace_metadata> ks_prop_defs::as_ks_metadata_update(lw_shared_ptr<data_dictionary::keyspace_metadata> old, const locator::token_metadata& tm, const gms::feature_service& feat) {
@@ -122,7 +124,7 @@ lw_shared_ptr<data_dictionary::keyspace_metadata> ks_prop_defs::as_ks_metadata_u
     const auto& old_options = old->strategy_options();
     auto sc = get_replication_strategy_class();
     if (sc) {
-        options = prepare_options(*sc, tm, get_replication_options(), old_options);
+        options = prepare_options(*sc, tm, feat, get_replication_options(), old_options);
     } else {
         sc = old->strategy_name();
         options = old_options;
