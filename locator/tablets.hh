@@ -16,6 +16,7 @@
 #include "schema/schema_fwd.hh"
 #include "utils/chunked_vector.hh"
 #include "utils/hash.hh"
+#include "cql3/statements/ks_prop_defs.hh"
 
 #include <boost/range/adaptor/transformed.hpp>
 #include <seastar/core/reactor.hh>

@@ -42,6 +42,7 @@ public:
 
     static constexpr auto REPLICATION_STRATEGY_CLASS_KEY = "class";
     static constexpr auto REPLICATION_FACTOR_KEY = "replication_factor";
+    static constexpr auto INITIAL_TABLETS_KEY = "initial_tablets";
 private:
     std::optional<sstring> _strategy_class;
 public:

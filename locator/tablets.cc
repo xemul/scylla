@@ -528,7 +528,7 @@ size_t tablet_aware_replication_strategy::parse_initial_tablets(const sstring& v
 void tablet_aware_replication_strategy::validate_tablet_options(const gms::feature_service& fs,
                                                                 const replication_strategy_config_options& opts) const {
     for (auto& c: opts) {
-        if (c.first == "initial_tablets") {
+        if (c.first == cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY) {
             if (!fs.tablets) {
                 throw exceptions::configuration_exception("Tablet replication is not enabled");
             }
@@ -539,7 +539,7 @@ void tablet_aware_replication_strategy::validate_tablet_options(const gms::featu
 
 void tablet_aware_replication_strategy::process_tablet_options(abstract_replication_strategy& ars,
                                                                replication_strategy_config_options& opts) {
-    auto i = opts.find("initial_tablets");
+    auto i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
     if (i != opts.end()) {
         _initial_tablets = parse_initial_tablets(i->second);
         ars._uses_tablets = true;
@@ -550,7 +550,7 @@ void tablet_aware_replication_strategy::process_tablet_options(abstract_replicat
 
 std::unordered_set<sstring> tablet_aware_replication_strategy::recognized_tablet_options() const {
     std::unordered_set<sstring> opts;
-    opts.insert("initial_tablets");
+    opts.insert(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
     return opts;
 }
 
