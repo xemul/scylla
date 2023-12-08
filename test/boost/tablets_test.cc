@@ -31,7 +31,7 @@ using namespace replica;
 using namespace service;
 
 static api::timestamp_type current_timestamp(cql_test_env& e) {
-    return api::new_timestamp();
+    return utils::UUID_gen::micros_timestamp(e.get_system_keyspace().local().get_last_group0_state_id().get0()) + 1;
 }
 
 static utils::UUID next_uuid() {
@@ -55,6 +55,7 @@ cql_test_config tablet_cql_test_config() {
             db::experimental_features_t::feature::TABLETS,
         }, db::config::config_source::CommandLine);
     c.db_config->consistent_cluster_management(true);
+    c.initial_tablets = 2;
     return c;
 }
 
@@ -81,10 +82,7 @@ SEASTAR_TEST_CASE(test_tablet_metadata_persistence) {
         auto ts = current_timestamp(e);
 
         {
-            tablet_metadata tm;
-
-            // Empty
-            verify_tablet_metadata_persistence(e, tm, ts);
+            tablet_metadata tm = read_tablet_metadata(e.local_qp()).get0();
 
             // Add table1
             {
