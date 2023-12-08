@@ -68,6 +68,39 @@ static std::map<sstring, sstring> prepare_options(
         }
     }
 
+    bool auto_initial_tablets = false;
+    if (feat.tablets) {
+        auto it = options.find(ks_prop_defs::INITIAL_TABLETS_KEY);
+        if (it == options.end()) {
+            auto_initial_tablets = true;
+        }
+    }
+
+    if (auto_initial_tablets) {
+        const auto& topo = tm.get_topology();
+        unsigned initial_tablets = std::numeric_limits<unsigned>::min();
+        for (const auto& dc : topo.get_datacenter_endpoints()) {
+            unsigned shards_in_dc = 0;
+            unsigned rf_in_dc = 1;
+
+            for (const auto& ep : dc.second) {
+                const auto* node = topo.find_node(ep);
+                if (node != nullptr) {
+                    shards_in_dc += node->get_shard_count();
+                }
+            }
+
+            if (auto it = options.find(dc.first); it != options.end()) {
+                rf_in_dc = std::stol(it->second);
+            }
+
+            unsigned tablets_in_dc = (shards_in_dc + rf_in_dc - 1) / rf_in_dc;
+            initial_tablets = std::max(initial_tablets, tablets_in_dc);
+        }
+
+        options.emplace(ks_prop_defs::INITIAL_TABLETS_KEY, fmt::to_string(initial_tablets));
+    }
+
     return options;
 }
 
