@@ -79,8 +79,9 @@ cql3::statements::alter_keyspace_statement::prepare_schema_mutations(query_proce
     try {
         auto old_ksm = qp.db().find_keyspace(_name).metadata();
         const auto& tm = *qp.proxy().get_token_metadata_ptr();
+        const auto& feat = qp.proxy().features();
 
-        auto m = service::prepare_keyspace_update_announcement(qp.db().real_database(), _attrs->as_ks_metadata_update(old_ksm, tm), ts);
+        auto m = service::prepare_keyspace_update_announcement(qp.db().real_database(), _attrs->as_ks_metadata_update(old_ksm, tm, feat), ts);
 
         using namespace cql_transport;
         auto ret = ::make_shared<event::schema_change>(
