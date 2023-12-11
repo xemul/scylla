@@ -165,7 +165,15 @@ sub-option                             type  description
                                              definitions or explicit datacenter settings.
                                              For example, to have three replicas per
                                              datacenter, supply this with a value of 3.
+``'tablets'``                          bool  Whether or not to use tablets replication for
+                                             this keyspace
+``'initial_tablets'``                  int   The number of tablets each table starts with.
+                                             Applies only if `tablets=true`. If missing,
+                                             the number is selected automatically based on
+                                             datacenter refplication factors
 ===================================== ====== =============================================
+
+.. note:: The `tablets` option depends on the `tablets` experimental feature. When missing the option defaults to the feature state. If the feature is OFF and the option is true, the keyspace creation fails.
 
 Note that when ``ALTER`` ing keyspaces and supplying ``replication_factor``,
 auto-expansion will only *add* new datacenters for safety, it will not alter
