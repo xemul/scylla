@@ -527,13 +527,13 @@ size_t tablet_aware_replication_strategy::parse_initial_tablets(const sstring& v
 
 void tablet_aware_replication_strategy::validate_tablet_options(const gms::feature_service& fs,
                                                                 const replication_strategy_config_options& opts) const {
-    for (auto& c: opts) {
-        if (c.first == cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY) {
+    auto
+    i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
+    if (i != opts.end()) {
             if (!fs.tablets) {
                 throw exceptions::configuration_exception("Tablet replication is not enabled");
             }
-            parse_initial_tablets(c.second);
-        }
+            parse_initial_tablets(i->second);
     }
 }
 
