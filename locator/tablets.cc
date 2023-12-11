@@ -527,10 +527,22 @@ size_t tablet_aware_replication_strategy::parse_initial_tablets(const sstring& v
 
 void tablet_aware_replication_strategy::validate_tablet_options(const gms::feature_service& fs,
                                                                 const replication_strategy_config_options& opts) const {
-    auto
+    auto i = opts.find(cql3::statements::ks_prop_defs::TABLETS_TOGGLE_KEY);
+    bool tablets_enabled = fs.tablets;
+    if (i != opts.end()) {
+        if (i->second == "true") {
+            if (!tablets_enabled) {
+                throw exceptions::configuration_exception("Tablet replication is not enabled");
+            }
+        } else if (i->second == "false") {
+            tablets_enabled = false;
+        } else {
+            throw exceptions::configuration_exception("Tablets option value must be true or false");
+        }
+    }
     i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
     if (i != opts.end()) {
-            if (!fs.tablets) {
+            if (!tablets_enabled) {
                 throw exceptions::configuration_exception("Tablet replication is not enabled");
             }
             parse_initial_tablets(i->second);
@@ -539,6 +551,8 @@ void tablet_aware_replication_strategy::validate_tablet_options(const gms::featu
 
 void tablet_aware_replication_strategy::process_tablet_options(abstract_replication_strategy& ars,
                                                                replication_strategy_config_options& opts) {
+  auto i = opts.find(cql3::statements::ks_prop_defs::TABLETS_TOGGLE_KEY);
+  if (i == opts.end() || i->second == "true") {
     auto i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
     if (i != opts.end()) {
         _initial_tablets = parse_initial_tablets(i->second);
@@ -546,11 +560,13 @@ void tablet_aware_replication_strategy::process_tablet_options(abstract_replicat
         mark_as_per_table(ars);
         opts.erase(i);
     }
+  }
 }
 
 std::unordered_set<sstring> tablet_aware_replication_strategy::recognized_tablet_options() const {
     std::unordered_set<sstring> opts;
     opts.insert(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
+    opts.insert(cql3::statements::ks_prop_defs::TABLETS_TOGGLE_KEY);
     return opts;
 }
 

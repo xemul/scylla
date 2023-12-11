@@ -72,7 +72,10 @@ static std::map<sstring, sstring> prepare_options(
     if (feat.tablets) {
         auto it = options.find(ks_prop_defs::INITIAL_TABLETS_KEY);
         if (it == options.end()) {
-            auto_initial_tablets = true;
+            auto it = options.find(ks_prop_defs::TABLETS_TOGGLE_KEY);
+            if (it == options.end() || it->second == "true") {
+                auto_initial_tablets = true;
+            }
         }
     }
 
