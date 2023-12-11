@@ -542,25 +542,25 @@ void tablet_aware_replication_strategy::validate_tablet_options(const gms::featu
     }
     i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
     if (i != opts.end()) {
-            if (!tablets_enabled) {
-                throw exceptions::configuration_exception("Tablet replication is not enabled");
-            }
-            parse_initial_tablets(i->second);
+        if (!tablets_enabled) {
+            throw exceptions::configuration_exception("Tablet replication is not enabled");
+        }
+        parse_initial_tablets(i->second);
     }
 }
 
 void tablet_aware_replication_strategy::process_tablet_options(abstract_replication_strategy& ars,
                                                                replication_strategy_config_options& opts) {
-  auto i = opts.find(cql3::statements::ks_prop_defs::TABLETS_TOGGLE_KEY);
-  if (i == opts.end() || i->second == "true") {
-    auto i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
-    if (i != opts.end()) {
-        _initial_tablets = parse_initial_tablets(i->second);
-        ars._uses_tablets = true;
-        mark_as_per_table(ars);
-        opts.erase(i);
+    auto i = opts.find(cql3::statements::ks_prop_defs::TABLETS_TOGGLE_KEY);
+    if (i == opts.end() || i->second == "true") {
+        auto i = opts.find(cql3::statements::ks_prop_defs::INITIAL_TABLETS_KEY);
+        if (i != opts.end()) {
+            _initial_tablets = parse_initial_tablets(i->second);
+            ars._uses_tablets = true;
+            mark_as_per_table(ars);
+            opts.erase(i);
+        }
     }
-  }
 }
 
 std::unordered_set<sstring> tablet_aware_replication_strategy::recognized_tablet_options() const {
