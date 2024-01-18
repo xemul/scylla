@@ -309,7 +309,7 @@ static unsigned calculate_initial_tablets_from_topology(const schema& s, const t
         initial_tablets = std::max(initial_tablets, tablets_in_dc);
     }
     rslogger.debug("Estimated {} initial tablets for table {}.{}", initial_tablets, s.ks_name(), s.cf_name());
-    return initial_tablets;
+    return initial_tablets * 100;
 }
 
 future<tablet_map> network_topology_strategy::allocate_tablets_for_new_table(schema_ptr s, token_metadata_ptr tm) const {
