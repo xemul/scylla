@@ -33,6 +33,7 @@
 #include "replica/tablet_mutation_builder.hh"
 #include "replica/tablets.hh"
 #include "service/qos/service_level_controller.hh"
+#include "service/migration_manager.hh"
 #include "service/raft/join_node.hh"
 #include "service/raft/raft_address_map.hh"
 #include "service/raft/raft_group0.hh"
@@ -41,6 +42,7 @@
 #include "service/topology_state_machine.hh"
 #include "topology_mutation.hh"
 #include "utils/error_injection.hh"
+#include "utils/stall_free.hh"
 #include "utils/to_string.hh"
 #include "service/endpoint_lifecycle_subscriber.hh"
 
@@ -752,6 +754,83 @@ class topology_coordinator : public endpoint_lifecycle_subscriber {
         case global_topology_request::cleanup:
             co_await start_cleanup_on_dirty_nodes(std::move(guard), true);
             break;
+        case global_topology_request::keyspace_rf_change: {
+            while (true) {
+                auto tmptr = get_token_metadata_ptr();
+                sstring ks_name = *_topo_sm._topology.new_keyspace_rf_change_ks_name;
+                std::unordered_map<sstring, sstring> new_rf_per_dc = *_topo_sm._topology.new_keyspace_rf_change_rf_per_dc;
+                std::map<sstring, sstring> new_rf_per_dc_map{new_rf_per_dc.begin(), new_rf_per_dc.end()};
+                sstring req_uuid = *_topo_sm._topology.global_request_id;
+                std::vector<canonical_mutation> updates;
+                sstring error;
+                auto& ks = _db.find_keyspace(ks_name);
+                size_t unimportant_init_tablet_count = 2; // must be a power of 2
+                locator::tablet_map new_tablet_map{unimportant_init_tablet_count};
+
+                for (const auto& table : ks.metadata()->tables()) {
+                    try {
+                        locator::tablet_map old_tablets = tmptr->tablets().get_tablet_map(table->id());
+                        locator::replication_strategy_params params{new_rf_per_dc_map, old_tablets.tablet_count()};
+                        auto new_strategy = locator::abstract_replication_strategy::create_replication_strategy("NetworkTopologyStrategy", params);
+                        new_tablet_map = co_await new_strategy->maybe_as_tablet_aware()->reallocate_tablets(table, tmptr, old_tablets);
+                    } catch (const std::exception& e) {
+                        error = e.what();
+                        rtlogger.error("Couldn't process global_topology_request::keyspace_rf_change, error: {},"
+                                       "desired rf per dc map: {}", error, new_rf_per_dc_map);
+                        updates.clear(); // remove all tablets mutations ...
+                        break;           // ... and only create mutations deleting the global req
+                    }
+
+                    auto tablet_id = new_tablet_map.first_tablet();
+                    while (true) {
+                        auto& tablet_info = new_tablet_map.get_tablet_info(tablet_id);
+                        auto last_token = new_tablet_map.get_last_token(tablet_id);
+                        updates.emplace_back(replica::tablet_mutation_builder(guard.write_timestamp(), table->id())
+                                                 .set_new_replicas(last_token, tablet_info.replicas)
+                                                 .set_stage(last_token, locator::tablet_transition_stage::allow_write_both_read_old)
+                                                 .set_transition(last_token, locator::tablet_transition_kind::rf_change)
+                                                 .build());
+
+                        if (auto next_tablet = new_tablet_map.next_tablet(tablet_id); next_tablet.has_value()) {
+                            tablet_id = *next_tablet;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                updates.push_back(canonical_mutation(topology_mutation_builder(guard.write_timestamp())
+                                                             .set_transition_state(topology::transition_state::tablet_migration)
+                                                             .set_version(_topo_sm._topology.version + 1)
+                                                             .del_global_topology_request()
+                                                             .del_global_topology_request_id()
+                                                             .build()));
+                updates.push_back(canonical_mutation(topology_request_tracking_mutation_builder(utils::UUID{req_uuid})
+                                                             .done(error)
+                                                             .build()));
+                if (error.empty()) {
+                    std::map<sstring, sstring> opts(new_rf_per_dc.begin(), new_rf_per_dc.end());
+                    auto ks_md = keyspace_metadata::new_keyspace(ks_name, "org.apache.cassandra.locator.NetworkTopologyStrategy",
+                                                                 opts, ks.metadata()->initial_tablets());
+                    auto schema_muts = prepare_keyspace_update_announcement(_db, ks_md, guard.write_timestamp());
+                    for (auto& m: schema_muts) {
+                        updates.emplace_back(m);
+                    }
+                }
+
+                sstring reason = format("ALTER tablets KEYSPACE called with new RF-per-DC settings: {}", new_rf_per_dc);
+                rtlogger.trace("do update {} reason {}", updates, reason);
+                mixed_change change{std::move(updates)};
+                group0_command g0_cmd = _group0.client().prepare_command(std::move(change), guard, reason);
+                try {
+                    co_await _group0.client().add_entry(std::move(g0_cmd), std::move(guard), &_as);
+                    break;
+                } catch (group0_concurrent_modification&) {
+                    rtlogger.info("handle_global_request(): concurrent modification, retrying");
+                }
+            }
+            break;
+        }
         }
     }
 
@@ -1365,7 +1444,13 @@ class topology_coordinator : public endpoint_lifecycle_subscriber {
             topology_mutation_builder builder(ts);
             topology_request_tracking_mutation_builder rtbuilder(_topo_sm._topology.find(id)->second.request_id);
             auto node_builder = builder.with_node(id).del("topology_request");
-            rtbuilder.done(fmt::format("Canceled. Dead nodes: {}", dead_nodes));
+            auto done_msg = fmt::format("Canceled. Dead nodes: {}", dead_nodes);
+            rtbuilder.done(done_msg);
+            topology_request_tracking_mutation_builder rt_global_req_builder(utils::UUID{*_topo_sm._topology.global_request_id});
+            if (_topo_sm._topology.global_request_id) {
+                rt_global_req_builder.done(done_msg)
+                                     .set("end_time", db_clock::now());
+            }
             switch (req) {
                 case topology_request::replace:
                 [[fallthrough]];
@@ -1389,6 +1474,7 @@ class topology_coordinator : public endpoint_lifecycle_subscriber {
             }
             muts.emplace_back(builder.build());
             muts.emplace_back(rtbuilder.build());
+            muts.emplace_back(rt_global_req_builder.build());
         }
 
         co_await update_topology_state(std::move(guard), std::move(muts), "cancel all topology requests");
