@@ -105,6 +105,10 @@ cql3::statements::alter_keyspace_statement::prepare_schema_mutations(query_proce
 
         if (ks.get_replication_strategy().uses_tablets() && !rf_map.empty() ) {
             qp.db().real_database().validate_keyspace_update(*ks_md_update);
+            if (rf_map.contains(ks_prop_defs::REPLICATION_FACTOR_KEY)) {
+                throw make_exception_future<std::tuple<::shared_ptr<::cql_transport::event::schema_change>, std::vector<mutation>, cql3::cql_warnings_vec>>(
+                        exceptions::invalid_request_exception("'replication_factor' tag is not allowed when executing ALTER KEYSPACE with tablets, please list the DCs explicitly"));
+            }
             if (auto repl_strategy = _attrs->get_replication_strategy_class();
                     repl_strategy.has_value() && repl_strategy != "NetworkTopologyStrategy") {
                 throw make_exception_future<std::tuple<::shared_ptr<::cql_transport::event::schema_change>, std::vector<mutation>, cql3::cql_warnings_vec>>(
@@ -114,9 +118,7 @@ cql3::statements::alter_keyspace_statement::prepare_schema_mutations(query_proce
                 service::topology_mutation_builder builder(ts);
                 builder.set_global_topology_request(service::global_topology_request::keyspace_rf_change);
                 builder.set_global_topology_request_id(this->global_req_id);
-                // TODO: need to correctly handle the generic 'replication_factor' tag in NTS
-                //       currently, if it's used, we're passing an empty map and some test.py testcases fail
-                builder.set_new_keyspace_rf_change_data(_name, _attrs->get_replication_map());
+                builder.set_new_keyspace_rf_change_data(_name, rf_map);
                 service::topology_change change{{builder.build()}};
                 auto topo_schema = qp.db().find_schema(db::system_keyspace::NAME, db::system_keyspace::TOPOLOGY);
                 boost::transform(change.mutations, std::back_inserter(muts), [topo_schema] (const canonical_mutation& cm) {
