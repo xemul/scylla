@@ -4478,6 +4478,12 @@ future<sstring> storage_service::wait_for_topology_request_completion(utils::UUI
     co_return sstring();
 }
 
+future<> storage_service::wait_for_topology_not_busy() {
+    while (_topology_state_machine._topology.is_busy()) {
+        co_await _topology_state_machine.event.wait();
+    }
+}
+
 future<> storage_service::raft_rebuild(sstring source_dc) {
     auto& raft_server = _group0->group0_server();
     utils::UUID request_id;
