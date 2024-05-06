@@ -106,6 +106,8 @@ tablet_migration_streaming_info get_migration_streaming_info(const locator::topo
             result.read_from = substract_sets(tinfo.replicas, trinfo.next);
             result.written_to = substract_sets(trinfo.next, tinfo.replicas);
             return result;
+        case tablet_transition_kind::rf_change:
+            [[fallthrough]];
         case tablet_transition_kind::rebuild:
             if (!trinfo.pending_replica.has_value()) {
                 return result; // No nodes to stream to -> no nodes to stream from
@@ -350,6 +352,7 @@ static const std::unordered_map<tablet_transition_kind, sstring> tablet_transiti
         {tablet_transition_kind::migration, "migration"},
         {tablet_transition_kind::intranode_migration, "intranode_migration"},
         {tablet_transition_kind::rebuild, "rebuild"},
+        {tablet_transition_kind::rf_change, "rf_change"},
 };
 
 static const std::unordered_map<sstring, tablet_transition_kind> tablet_transition_kind_from_name = std::invoke([] {
