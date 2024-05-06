@@ -1048,9 +1048,12 @@ class topology_coordinator : public endpoint_lifecycle_subscriber {
                         }
                     }
                     if (do_barrier()) {
-                        rtlogger.debug("Will set tablet {} stage to {}", gid, locator::tablet_transition_stage::write_both_read_old);
+                        auto next_transition_stage = (trinfo.transition == locator::tablet_transition_kind::rf_change)
+                                                     ? locator::tablet_transition_stage::end_migration
+                                                     : locator::tablet_transition_stage::write_both_read_old;
+                        rtlogger.debug("Will set tablet {} stage to {}", gid, next_transition_stage);
                         updates.emplace_back(get_mutation_builder()
-                            .set_stage(last_token, locator::tablet_transition_stage::write_both_read_old)
+                            .set_stage(last_token, next_transition_stage)
                             // Create session a bit earlier to avoid adding barrier
                             // to the streaming stage to create sessions on replicas.
                             .set_session(last_token, session_id(utils::UUID_gen::get_time_UUID()))

@@ -100,6 +100,11 @@ tablet_migration_streaming_info get_migration_streaming_info(const locator::topo
 tablet_migration_streaming_info get_migration_streaming_info(const locator::topology& topo, const tablet_info& tinfo, const tablet_transition_info& trinfo) {
     tablet_migration_streaming_info result;
     switch (trinfo.transition) {
+        case tablet_transition_kind::rf_change:
+            if (!trinfo.pending_replica) {
+                return result;
+            }
+            [[fallthrough]];
         case tablet_transition_kind::migration:
             result.read_from = substract_sets(tinfo.replicas, trinfo.next);
             result.written_to = substract_sets(trinfo.next, tinfo.replicas);
@@ -347,6 +352,7 @@ tablet_transition_stage tablet_transition_stage_from_string(const sstring& name)
 static const std::unordered_map<tablet_transition_kind, sstring> tablet_transition_kind_to_name = {
         {tablet_transition_kind::migration, "migration"},
         {tablet_transition_kind::rebuild, "rebuild"},
+        {tablet_transition_kind::rf_change, "rf_change"},
 };
 
 static const std::unordered_map<sstring, tablet_transition_kind> tablet_transition_kind_from_name = std::invoke([] {
