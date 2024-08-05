@@ -96,6 +96,7 @@ Additional References
 ---------------------
 
 * :doc:`Taking backups </operating-scylla/procedures/backup-restore/backup>` with snapshots.
+** :doc:`Taking backups via API </dev/object_storage.md>`
 * :doc:`How snapshots are created on demand </operating-scylla/nodetool-commands/snapshot>` (rather than automatically when tables are dropped or truncated).
 * :doc:`Restoring from snapshots </operating-scylla/procedures/backup-restore/restore>`
 
