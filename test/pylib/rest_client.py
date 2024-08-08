@@ -309,7 +309,11 @@ class ScyllaRESTAPIClient():
 
     async def backup(self, node_ip: str, ks: str, tag: str, dest: str, bucket: str) -> str:
         """Backup keyspace's snapshot"""
-        return await self.client.post_json(f"/storage_service/backup?keyspace={ks}&endpoint={dest}&bucket={bucket}&snapshot={tag}", host=node_ip)
+        params = {"keyspace": ks,
+                  "endpoint": dest,
+                  "bucket": bucket,
+                  "snapshot": tag}
+        return await self.client.post_json(f"/storage_service/backup", host=node_ip, params=params)
 
     async def take_snapshot(self, node_ip: str, ks: str, tag: str) -> None:
         """Take keyspace snapshot"""
