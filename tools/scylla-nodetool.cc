@@ -377,14 +377,15 @@ void backup_operation(scylla_rest_client& client, const bpo::variables_map& vm) 
     if (vm.count("snapshot")) {
         params["snapshot"] = vm["snapshot"].as<sstring>();
     }
-    const auto task_id = client.post("/storage_service/backup", std::move(params)).GetString();
+    const auto backup_res = client.post("/storage_service/backup", std::move(params));
     if (vm.count("nowait")) {
         return;
     }
 
-    const auto url = format("/task_manager/wait_task/{}", task_id);
-    const auto res = client.get(url);
-    const auto& status = res.GetObject();
+    const auto task_id = rjson::to_string_view(backup_res);
+    const auto url = seastar::format("/task_manager/wait_task/{}", task_id);
+    const auto wait_res = client.get(url);
+    const auto& status = wait_res.GetObject();
     auto state = rjson::to_string_view(status["state"]);
     fmt::print("{}", state);
     if (state != "done") {
@@ -2878,6 +2879,7 @@ std::map<operation, operation_func> get_operations_with_func() {
                 "backup",
                 "copy SSTables from a specified keyspace's snapshot to a designated bucket in object storage",
 fmt::format(R"(
+For more information, see: {}"
 )", doc_link("operating-scylla/nodetool-commands/backup.html")),
                 {
                     typed_option<sstring>("keyspace", "Name of a keyspace to copy SSTables from"),
