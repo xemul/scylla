@@ -524,3 +524,10 @@ SEASTAR_THREAD_TEST_CASE(stress_compaction_test) {
         }
     );
 }
+
+SEASTAR_THREAD_TEST_CASE(foo) {
+    test_tree t(int_compare{});
+    test_tree::iterator it = t.begin();
+    test_tree::const_iterator cit(it);
+    (void)cit;
+}

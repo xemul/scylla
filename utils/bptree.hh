@@ -654,6 +654,16 @@ public:
 
     public:
         const_iterator() noexcept : super() {}
+
+        explicit const_iterator(const iterator_base_nonconst* other) {
+            if (other->is_end()) {
+                super::_tree = nullptr;
+                super::_idx = super::npos;
+            } else {
+                super::_data = nullptr;
+                super::_idx = super::npos + 1;
+            }
+        }
     };
 
     class iterator final : public iterator_base_nonconst {
@@ -672,6 +682,10 @@ public:
                 super::_idx = other._idx;
                 super::_data = const_cast<data *>(other._data);
             }
+        }
+
+        operator const_iterator() noexcept {
+            return const_iterator(this);
         }
 
         iterator() noexcept : super() {}
