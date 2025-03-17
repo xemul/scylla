@@ -996,7 +996,7 @@ class client::download_source final : public seastar::data_source_impl {
     std::optional<external_body> _body;
     gate _bg;
 
-    future<> request_body();
+    future<external_body> request_body();
 
 public:
     download_source(shared_ptr<client> cln, sstring object_name, std::optional<range> range, seastar::abort_source* as)
@@ -1021,15 +1021,15 @@ data_source client::make_download_source(sstring object_name, std::optional<rang
     return data_source(std::make_unique<download_source>(shared_from_this(), std::move(object_name), range, as));
 }
 
-future<> client::download_source::request_body() {
+auto client::download_source::request_body() -> future<external_body> {
     auto req = http::request::make("GET", _client->_host, _object_name);
     auto range_header = format_range_header(_range);
     s3l.trace("GET {} download range {}:{}", _object_name, _range.off, _range.len);
     req._headers["Range"] = std::move(range_header);
 
-    auto bp = std::make_unique<std::optional<promise<>>>(std::in_place);
+    auto bp = std::make_unique<std::optional<promise<external_body>>>(std::in_place);
     auto& p = *bp;
-    future<> f = p->get_future();
+    future<external_body> f = p->get_future();
 
     (void)_client->make_request(std::move(req), [this, &p] (group_client& gc, const http::reply& rep, input_stream<char>&& in_) mutable -> future<> {
         s3l.trace("GET {} got the body ({} {} bytes)", _object_name, rep._status, rep.content_length);
@@ -1038,10 +1038,11 @@ future<> client::download_source::request_body() {
         }
 
         auto in = std::move(in_);
-        auto& xb = _body.emplace(in);
-        p->set_value();
+        external_body xb(in);
+        auto f = xb.done.get_future();
+        p->set_value(std::move(xb));
         p.reset();
-        co_await xb.done.get_future();
+        co_await std::move(f);
     }, {}, _as).handle_exception([&p] (auto ex) {
         if (p.has_value()) {
             p->set_exception(std::move(ex));
@@ -1071,7 +1072,8 @@ future<temporary_buffer<char>> client::download_source::get() {
             }
         }
 
-        co_await request_body();
+        auto xb = co_await request_body();
+        _body.emplace(std::move(xb));
     }
 }
 
