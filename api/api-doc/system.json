@@ -211,7 +211,7 @@
          ]
       },
       {
-         "path":"/system/set_io_limit",
+         "path":"/system/set_io_limit/{class_name}",
          "operations":[
             {
                "method":"POST",
