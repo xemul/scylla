@@ -209,6 +209,46 @@
                "parameters":[]
             }
          ]
+      },
+      {
+         "path":"/system/set_io_limit",
+         "operations":[
+            {
+               "method":"POST",
+               "summary":"Set I/O limit for a class",
+               "type":"string",
+               "nickname":"set_io_limit",
+               "produces":[
+                  "application/json"
+               ],
+               "parameters":[
+                  {
+                     "name":"class_name",
+                     "description":"The logger to query about",
+                     "required":true,
+                     "allowMultiple":false,
+                     "type":"string",
+                     "paramType":"path"
+                  },
+                  {
+                     "name":"bandwidth",
+                     "description":"Bandwidth limit in bytes per second",
+                     "required":true,
+                     "allowMultiple":false,
+                     "type":"integer",
+                     "paramType":"query"
+                  },
+                  {
+                     "name":"iops",
+                     "description":"The IOPS limit",
+                     "required":true,
+                     "allowMultiple":false,
+                     "type":"integer",
+                     "paramType":"query"
+                  }
+               ]
+            }
+         ]
       }
    ]
 }

@@ -20,7 +20,9 @@
 #include <seastar/http/exception.hh>
 #include <seastar/util/short_streams.hh>
 #include <seastar/http/short_streams.hh>
+#include <stdexcept>
 
+#include "seastar/json/json_elements.hh"
 #include "utils/log.hh"
 
 extern logging::logger apilog;
@@ -142,6 +144,22 @@ void set_system(http_context& ctx, routes& r) {
             throw bad_param_exception("Unknown logging level " + req.get_query_param("level"));
         }
         return json::json_void();
+    });
+
+    hs::set_io_limit.set(r, [&ctx](std::unique_ptr<request> req) -> future<json::json_return_type> {
+        try {
+            auto io_class = req->get_path_param("class_name");
+            auto bandwidth = boost::lexical_cast<uint64_t>(req->get_query_param("bandwidth"));
+            auto iops = boost::lexical_cast<uint64_t>(req->get_query_param("iops"));
+
+            co_await ctx.db.local().set_io_limits(io_class, bandwidth, iops);
+
+            apilog.info("IO limits updated successfully");
+        } catch (std::invalid_argument& e) {
+            throw bad_param_exception("Unknown I/O class name: " + req->get_path_param("class_name"));
+        }
+
+        co_return json::json_void();
     });
 
     hs::write_log_message.set(r, [](const_req req) {

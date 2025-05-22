@@ -3402,4 +3402,36 @@ future<utils::chunked_vector<temporary_buffer<char>>> database::sample_data_file
     co_return result;
 }
 
+seastar::scheduling_group& database::get_scheduling_group_for_io_class(const sstring& io_class_name) {
+    if (io_class_name == "compaction") {
+        return _dbcfg.compaction_scheduling_group;
+    } else if (io_class_name == "memtable") {
+        return _dbcfg.memtable_scheduling_group;
+    } else if (io_class_name == "memtable_to_cache") {
+        return _dbcfg.memtable_to_cache_scheduling_group;
+    } else if (io_class_name == "streaming") {
+        return _dbcfg.streaming_scheduling_group;
+    } else if (io_class_name == "gossip") {
+        return _dbcfg.gossip_scheduling_group;
+    } else if (io_class_name == "statement") {
+        return _dbcfg.statement_scheduling_group;
+    } else if (io_class_name == "commitlog") {
+        return _dbcfg.commitlog_scheduling_group;
+    } else if (io_class_name == "schema_commitlog") {
+        return _dbcfg.schema_commitlog_scheduling_group;
+    }
+
+    throw std::invalid_argument(fmt::format("Unknown I/O class name: {}", io_class_name));
+}
+
+future<> database::set_io_limits(const sstring& io_class_name, uint64_t bandwitdh, uint64_t iops) {
+    auto& sg = get_scheduling_group_for_io_class(io_class_name);
+    if (bandwitdh == 0 || iops == 0) {
+        throw std::invalid_argument(fmt::format("IO limits cant be set to 0"));
+    }
+
+    co_await sg.update_io_bandwidth(bandwitdh);
+    co_await sg.update_io_rate(iops);
+}
+
 } // namespace replica
