@@ -15,6 +15,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/when_all.hh>
+#include "seastar/core/scheduling.hh"
 #include "utils/assert.hh"
 #include "utils/hash.hh"
 #include "db_clock.hh"
@@ -1917,7 +1918,13 @@ private:
 
     static future<> truncate_table_on_all_shards(sharded<database>& db, sharded<db::system_keyspace>& sys_ks, const global_table_ptr&, std::optional<db_clock::time_point> truncated_at_opt, bool with_snapshot, std::optional<sstring> snapshot_name_opt);
     future<> truncate(db::system_keyspace& sys_ks, column_family& cf, const table_truncate_state&);
+
+    // Defines a mapping between scheduling groups and a name used in the REST API
+    // to configure io limits per class
+    seastar::scheduling_group& get_scheduling_group_for_io_class(const sstring& io_class_name);
 public:
+    future<> set_io_limits(const sstring& io_class_name, uint64_t bandwitdh, uint64_t iops);
+    
     /** Truncates the given column family */
     // If truncated_at_opt is not given, it is set to db_clock::now right after flush/clear.
     static future<> truncate_table_on_all_shards(sharded<database>& db, sharded<db::system_keyspace>& sys_ks, sstring ks_name, sstring cf_name, std::optional<db_clock::time_point> truncated_at_opt = {}, bool with_snapshot = true, std::optional<sstring> snapshot_name_opt = {});
