@@ -1694,25 +1694,25 @@ cql_server::connection::make_schema_change_event(const event::schema_change& eve
 void cql_server::connection::write_response(foreign_ptr<std::unique_ptr<cql_server::response>>&& response, service_permit permit, cql_compression compression)
 {
     _ready_to_respond = _ready_to_respond.then([this, compression, response = std::move(response), permit = std::move(permit)] () mutable {
-        auto message = response->make_message(_version, compression);
-        message.on_delete([response = std::move(response)] { });
-        return _write_buf.write(std::move(message)).then([this] {
-            return _write_buf.flush();
+        return do_with(std::move(response), [this, compression] (auto& response) {
+            return response->output(_write_buf, _version, compression).then([this] {
+                return _write_buf.flush();
+            });
         });
     });
 }
 
-scattered_message<char> cql_server::response::make_message(uint8_t version, cql_compression compression) {
+future<> cql_server::response::output(output_stream<char>& out, uint8_t version, cql_compression compression) {
     if (compression != cql_compression::none) {
         compress(compression);
     }
-    scattered_message<char> msg;
     auto frame = make_frame(version, _body.size());
-    msg.append(std::move(frame));
-    for (auto&& fragment : _body.fragments()) {
-        msg.append_static(reinterpret_cast<const char*>(fragment.data()), fragment.size());
-    }
-    return msg;
+    return out.write(std::move(frame)).then([this, &out] {
+        return do_for_each(_body.begin(), _body.end(), [&out] (bytes_view fragment) {
+            temporary_buffer<char> buf((char*)fragment.data(), fragment.size(), deleter());
+            return out.write(std::move(buf));
+        });
+    });
 }
 
 void cql_server::response::compress(cql_compression compression)

@@ -79,9 +79,7 @@ public:
     void write(const cql3::metadata& m, const cql_metadata_id_wrapper& request_metadata_id, bool no_metadata = false);
     void write(const cql3::prepared_metadata& m, uint8_t version);
 
-    // Make a non-owning scattered_message of the response. Remains valid as long
-    // as the response object is alive.
-    scattered_message<char> make_message(uint8_t version, cql_compression compression);
+    future<> output(output_stream<char>& out, uint8_t version, cql_compression compression);
 
     cql_binary_opcode opcode() const {
         return _opcode;
