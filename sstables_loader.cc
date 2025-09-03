@@ -776,7 +776,7 @@ future<tasks::task_id> sstables_loader::download_new_sstables(sstring ks_name, s
     if (!_storage_manager.is_known_endpoint(endpoint)) {
         throw std::invalid_argument(format("endpoint {} not found", endpoint));
     }
-    llog.info("Restore sstables from {}({}) to {}", endpoint, prefix, ks_name);
+    llog.info("Restore sstables from {}({}) to {} ({} sstable names total)", endpoint, prefix, ks_name, sstables.size());
 
     auto task = co_await _task_manager_module->make_and_start_task<download_task_impl>({}, container(), std::move(endpoint), std::move(bucket), std::move(ks_name), std::move(cf_name), std::move(prefix), std::move(sstables), scope);
     co_return task->id();
