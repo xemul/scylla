@@ -71,7 +71,7 @@ public:
 
         if (_state->creds) {
             _logger.debug("Making new HTTPS connection addr={} host={}", _state->addr, _host);
-            co_return co_await tls::connect(_state->creds, _state->addr, tls::tls_options{.server_name = _host});
+            co_return co_await tls::connect(_state->creds, _state->addr, tls::tls_options{.wait_for_eof_on_shutdown = false, .server_name = _host});
         } else {
             _logger.debug("Making new HTTP connection");
             co_return co_await seastar::connect(_state->addr, {}, transport::TCP);
