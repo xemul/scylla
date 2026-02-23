@@ -260,6 +260,13 @@ struct tablet_task_info {
     static std::unordered_set<sstring> deserialize_repair_dcs_filter(sstring filter);
 };
 
+struct restore_config {
+    sstring snapshot_name;
+    sstring endpoint;
+    sstring bucket;
+    bool operator==(const restore_config&) const = default;
+};
+
 /// Stores information about a single tablet.
 struct tablet_info {
     tablet_replica_set replicas;
@@ -360,6 +367,7 @@ struct tablet_transition_info {
     tablet_replica_set next;
     std::optional<tablet_replica> pending_replica; // Optimization (next - tablet_info::replicas)
     service::session_id session_id;
+    std::optional<locator::restore_config> restore_cfg;
     write_replica_set_selector writes;
     read_replica_set_selector reads;
 
@@ -367,7 +375,8 @@ struct tablet_transition_info {
                            tablet_transition_kind kind,
                            tablet_replica_set next,
                            std::optional<tablet_replica> pending_replica,
-                           service::session_id session_id = {});
+                           service::session_id session_id = {},
+                           std::optional<locator::restore_config> rcfg = std::nullopt);
 
     bool operator==(const tablet_transition_info&) const = default;
 };
