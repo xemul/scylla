@@ -33,6 +33,16 @@ class feature_service;
 
 }
 
+namespace db {
+    class system_keyspace;
+    class system_distributed_keyspace;
+}
+
+namespace service {
+    class storage_proxy;
+    class migration_manager;
+}
+
 namespace replica {
 
 data_type get_replica_set_type();
@@ -114,5 +124,14 @@ future<std::optional<locator::tablet_transition_stage>> read_tablet_transition_s
 
 /// Validates changes to system.tablets represented by mutations
 void validate_tablet_metadata_change(const locator::tablet_metadata& tm, const utils::chunked_vector<canonical_mutation>& mutations);
+
+
+future<> alter_table_with_tablet_hints(schema_ptr schema,
+                                       service::storage_proxy& sp,
+                                       service::migration_manager& mm,
+                                       service::storage_service& ss,
+                                       size_t min_tablet_count,
+                                       size_t max_tablet_count,
+                                       bool wait_balancer=true);
 
 } // namespace replica
