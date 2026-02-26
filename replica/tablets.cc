@@ -13,6 +13,7 @@
 #include "types/tuple.hh"
 #include "types/list.hh"
 #include "db/system_keyspace.hh"
+#include "db/system_distributed_keyspace.hh"
 #include "schema/schema_builder.hh"
 #include "cql3/query_processor.hh"
 #include "cql3/untyped_result_set.hh"
@@ -26,6 +27,8 @@
 #include "mutation/async_utils.hh"
 #include "compaction/compaction_manager.hh"
 #include "dht/fixed_shard.hh"
+#include "service/migration_manager.hh"
+#include "service/storage_proxy.hh"
 
 namespace replica {
 
@@ -1400,6 +1403,64 @@ tablet_sstable_set::create_single_key_sstable_reader(
 
 sstables::sstable_set_impl::selector_and_schema_t tablet_sstable_set::make_incremental_selector() const {
     return std::make_tuple(std::make_unique<tablet_incremental_selector>(*this), *_schema);
+}
+
+future<> alter_table_with_tablet_hints(schema_ptr schema,
+                                       service::storage_proxy& sp,
+                                       service::migration_manager& mm,
+                                       service::storage_service& ss,
+                                       size_t min_tablet_count,
+                                       size_t max_tablet_count,
+                                       bool wait_balancer) {
+    if (this_shard_id() != 0) {
+        throw std::runtime_error("Only shard 0 can execute alter_table_with_tablet_hints");
+    }
+
+    schema_builder builder(schema);
+    builder.set_tablet_options({
+        {"min_tablet_count", to_sstring(min_tablet_count)},
+        {"max_tablet_count", to_sstring(max_tablet_count)}
+    });
+    auto modified_schema = builder.build();
+
+    while (true) {
+        auto group0_guard = co_await mm.start_group0_operation();
+        auto ts = group0_guard.write_timestamp();
+        sstring description = format("Altering table {}.{} with tablet count hints min_tablet_count={} max_tablet_count={}",
+            schema->ks_name(), schema->cf_name(), min_tablet_count, max_tablet_count);
+
+        auto mutations = co_await service::prepare_column_family_update_announcement(sp, modified_schema, /*view_updates=*/{}, ts);
+
+        if (!mutations.empty()) {
+            try {
+                co_await mm.announce(std::move(mutations), std::move(group0_guard), description);
+            } catch (service::group0_concurrent_modification&) {
+                tablet_logger.info("Concurrent operation is detected while starting, retrying.");
+                continue;
+            }
+        }
+
+        break;
+    }
+
+    if (!wait_balancer) {
+        co_return;
+    }
+
+    auto &tsm = ss.get_topology_state_machine();
+    while (true) {
+        auto tmptr = sp.get_token_metadata_ptr();
+        auto& tmap = tmptr->tablets().get_tablet_map(schema->id());
+        auto tablet_count = tmap.tablet_count();
+        // FIXME: Checking tablet_count <= max_tablet_count should be enough, but the restore code currently has a limitation and it cannot handle
+        // any merges or splits until the restore transitions are done
+        if (tablet_count == max_tablet_count) {
+            break;
+        }
+        co_await tsm.event.when();
+        // FIXME: add an abort_source propagated from the root of the restore operation
+    }
+
 }
 
 } // namespace replica
