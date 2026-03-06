@@ -154,6 +154,13 @@ public:
                                             dht::token start_token,
                                             is_downloaded downloaded) const;
 
+    inline service::migration_manager& get_migration_manager() {
+        return _mm;
+    }
+
+    inline service::storage_proxy& get_storage_proxy() {
+        return _sp;
+    }
 private:
     future<> create_tables(std::vector<schema_ptr> tables);
 };
