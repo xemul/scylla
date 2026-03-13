@@ -1068,6 +1068,9 @@ public:
     void set_train_dict_callback(decltype(_train_dict));
     seastar::future<> notify_client_routes_change(const client_routes_service::client_route_keys& client_route_keys);
 
+    inline topology_state_machine& get_topology_state_machine() {
+        return _topology_state_machine;
+    }
 
     friend class join_node_rpc_handshaker;
     friend class node_ops::node_ops_virtual_task;
