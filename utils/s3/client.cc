@@ -763,7 +763,7 @@ private:
         auto req = http::request::make("PUT", _client->_host, _object_name);
         req._headers["x-amz-copy-source"] = _source_object;
         auto range = format("bytes={}-{}", offset, offset + part_size - 1);
-        s3l.trace("PUT part {}, Upload range: {}, Upload ID:", part_number, range, _upload_id);
+        s3l.trace("PUT part {}, Upload range: {}, Upload ID: {}", part_number, range, _upload_id);
 
         req._headers["x-amz-copy-source-range"] = range;
         req.set_query_param("partNumber", to_sstring(part_number + 1));
