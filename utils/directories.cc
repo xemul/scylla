@@ -110,7 +110,7 @@ void verification_error(const fs::path& path, const char* fstr, Args&&... args) 
 // No other file types may exist.
 // If a 'do_verify_subpath' function is provided, only the subpaths
 // that return true when called with that function will be verified.
-future<> directories::do_verify_owner_and_mode(fs::path path, recursive recurse, int level, std::function<bool(const fs::path&)> do_verify_subpath) {
+future<> directories::do_verify_owner_and_mode(fs::path path, recursive recurse, int level, lister::filter_type do_verify_subpath) {
     seastar::stat_data sd;
     try {
         sd = co_await file_stat(path.string(), follow_symlink::no);
@@ -142,12 +142,12 @@ future<> directories::do_verify_owner_and_mode(fs::path path, recursive recurse,
         if (level && !recurse) {
             co_return;
         }
-        co_await lister::scan_dir(path, {}, [recurse, level = level + 1, &do_verify_subpath] (fs::path dir, directory_entry de) -> future<> {
-            auto subpath = dir / de.name;
-            if (!do_verify_subpath || do_verify_subpath(subpath)) {
-                co_await do_verify_owner_and_mode(std::move(subpath), recurse, level, do_verify_subpath);
+        auto lister = directory_lister(path, lister::dir_entry_types::full(), do_verify_subpath, lister::show_hidden::no);
+        co_await with_closeable(std::move(lister), coroutine::lambda([&] (auto& lister) -> future<> {
+            while (auto de = co_await lister.get()) {
+                co_await do_verify_owner_and_mode(path / de->name, recurse, level + 1, do_verify_subpath);
             }
-        });
+        }));
         break;
     }
     default:
@@ -168,7 +168,8 @@ future<> directories::verify_owner_and_mode_of_data_dir(directories::set dir_set
     // verify data and index files in the first iteration and the other files in the second iteration.
     for (auto verify_data_and_index_files : { true, false }) {
         co_await coroutine::parallel_for_each(dir_set.get_paths(), [verify_data_and_index_files] (const auto &path) {
-            return do_verify_owner_and_mode(std::move(path), recursive::yes, 0, [verify_data_and_index_files] (const fs::path &path) {
+            return do_verify_owner_and_mode(std::move(path), recursive::yes, 0, [verify_data_and_index_files] (const fs::path& dir, const directory_entry& de) {
+                auto path = dir / de.name;
                 component_type path_component_type;
                 try {
                     // use parse_path to deduce the component type as using system calls

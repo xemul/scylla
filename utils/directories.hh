@@ -13,6 +13,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/bool_class.hh>
 #include "utils/file_lock.hh"
+#include "utils/lister.hh"
 
 using namespace seastar;
 
@@ -49,7 +50,7 @@ private:
     bool _developer_mode;
     std::vector<file_lock> _locks;
 
-    static future<> do_verify_owner_and_mode(std::filesystem::path path, recursive, int level, std::function<bool(const fs::path&)> do_verify_subpath = {});
+    static future<> do_verify_owner_and_mode(std::filesystem::path path, recursive, int level, lister::filter_type do_verify_subpath = [] (const fs::path&, const directory_entry&) { return true; });
 };
 
 } // namespace utils
