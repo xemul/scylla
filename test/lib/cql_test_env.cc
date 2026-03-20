@@ -774,7 +774,8 @@ private:
                 _sys_ks.stop().get();
             });
 
-            replica::distributed_loader::init_system_keyspace(_sys_ks, _erm_factory, _db).get();
+            replica::distributed_loader::init_system_keyspace(_sys_ks, _erm_factory, _db,
+                replica::allow_dangerous_direct_import_of_cassandra_counters(false)).get();
             _db.local().init_schema_commitlog();
             _sys_ks.invoke_on_all(&db::system_keyspace::mark_writable).get();
 
@@ -1036,7 +1037,8 @@ private:
                 }
             }).get();
 
-            replica::distributed_loader::init_non_system_keyspaces(_db, _proxy, _sys_ks).get();
+            replica::distributed_loader::init_non_system_keyspaces(_db, _proxy, _sys_ks,
+                replica::allow_dangerous_direct_import_of_cassandra_counters(false)).get();
 
             _db.invoke_on_all([] (replica::database& db) {
                 db.get_tables_metadata().for_each_table([] (table_id, lw_shared_ptr<replica::table> table) {

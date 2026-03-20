@@ -165,13 +165,13 @@ distributed_loader::make_sstables_available(sstables::sstable_directory& dir, sh
 }
 
 future<>
-distributed_loader::process_upload_dir(sharded<replica::database>& db, sharded<db::view::view_builder>& vb, sharded<db::view::view_building_worker>& vbw, sstring ks, sstring cf, bool skip_cleanup, bool skip_reshape) {
+distributed_loader::process_upload_dir(sharded<replica::database>& db, sharded<db::view::view_builder>& vb, sharded<db::view::view_building_worker>& vbw, sstring ks, sstring cf, bool skip_cleanup, bool skip_reshape, allow_dangerous_direct_import_of_cassandra_counters allow_ddi) {
     const auto& rs = db.local().find_keyspace(ks).get_replication_strategy();
     if (rs.is_per_table()) {
         on_internal_error(dblog, "process_upload_dir is not supported with tablets");
     }
 
-    return seastar::async([&db, &vb, &vbw, ks = std::move(ks), cf = std::move(cf), skip_cleanup, skip_reshape] {
+    return seastar::async([&db, &vb, &vbw, ks = std::move(ks), cf = std::move(cf), skip_cleanup, skip_reshape, allow_ddi] {
         auto global_table = get_table_on_all_shards(db, ks, cf).get();
 
         sharded<sstables::sstable_directory> directory;
@@ -184,7 +184,7 @@ distributed_loader::process_upload_dir(sharded<replica::database>& db, sharded<d
         lock_table(global_table, directory).get();
         sstables::sstable_directory::process_flags flags {
             .need_mutate_level = true,
-            .enable_dangerous_direct_import_of_cassandra_counters = db.local().get_config().enable_dangerous_direct_import_of_cassandra_counters(),
+            .enable_dangerous_direct_import_of_cassandra_counters = bool(allow_ddi),
             .allow_loading_materialized_view = false,
             .sstable_open_config = {
                 .ignore_component_digest_mismatch = db.local().get_config().ignore_component_digest_mismatch(),
@@ -230,8 +230,8 @@ distributed_loader::process_upload_dir(sharded<replica::database>& db, sharded<d
 }
 
 future<std::tuple<table_id, std::vector<std::vector<sstables::shared_sstable>>>>
-distributed_loader::get_sstables_from_upload_dir(sharded<replica::database>& db, sstring ks, sstring cf, sstables::sstable_open_config cfg) {
-    return get_sstables_from(db, ks, cf, cfg, [] (auto& global_table, auto& directory) {
+distributed_loader::get_sstables_from_upload_dir(sharded<replica::database>& db, sstring ks, sstring cf, sstables::sstable_open_config cfg, allow_dangerous_direct_import_of_cassandra_counters allow_ddi) {
+    return get_sstables_from(db, ks, cf, cfg, allow_ddi, [] (auto& global_table, auto& directory) {
         return directory.start(global_table.as_sharded_parameter(),
             sstables::sstable_state::upload, &error_handler_gen_for_upload_dir
         );
@@ -239,8 +239,8 @@ distributed_loader::get_sstables_from_upload_dir(sharded<replica::database>& db,
 }
 
 future<std::tuple<table_id, std::vector<std::vector<sstables::shared_sstable>>>>
-distributed_loader::get_sstables_from_object_store(sharded<replica::database>& db, sstring ks, sstring cf, std::vector<sstring> sstables, sstring endpoint, sstring type, sstring bucket, sstring prefix, sstables::sstable_open_config cfg, std::function<seastar::abort_source*()> get_abort_src) {
-    return get_sstables_from(db, ks, cf, cfg, [bucket, endpoint, type, prefix, sstables=std::move(sstables), &get_abort_src] (auto& global_table, auto& directory) {
+distributed_loader::get_sstables_from_object_store(sharded<replica::database>& db, sstring ks, sstring cf, std::vector<sstring> sstables, sstring endpoint, sstring type, sstring bucket, sstring prefix, sstables::sstable_open_config cfg, allow_dangerous_direct_import_of_cassandra_counters allow_ddi, std::function<seastar::abort_source*()> get_abort_src) {
+    return get_sstables_from(db, ks, cf, cfg, allow_ddi, [bucket, endpoint, type, prefix, sstables=std::move(sstables), &get_abort_src] (auto& global_table, auto& directory) {
         return directory.start(global_table.as_sharded_parameter(),
             sharded_parameter([bucket, endpoint, type, prefix, &get_abort_src] {
                 seastar::abort_source* as = get_abort_src ? get_abort_src() : nullptr;
@@ -253,9 +253,9 @@ distributed_loader::get_sstables_from_object_store(sharded<replica::database>& d
 }
 
 future<std::tuple<table_id, std::vector<std::vector<sstables::shared_sstable>>>>
-distributed_loader::get_sstables_from(sharded<replica::database>& db, sstring ks, sstring cf, sstables::sstable_open_config cfg,
+distributed_loader::get_sstables_from(sharded<replica::database>& db, sstring ks, sstring cf, sstables::sstable_open_config cfg, allow_dangerous_direct_import_of_cassandra_counters allow_ddi,
         noncopyable_function<future<>(global_table_ptr&, sharded<sstables::sstable_directory>&)> start_dir) {
-    return seastar::async([&db, ks = std::move(ks), cf = std::move(cf), start_dir = std::move(start_dir), cfg] {
+    return seastar::async([&db, ks = std::move(ks), cf = std::move(cf), start_dir = std::move(start_dir), cfg, allow_ddi] {
         auto global_table = get_table_on_all_shards(db, ks, cf).get();
         auto table_id = global_table->schema()->id();
 
@@ -267,7 +267,7 @@ distributed_loader::get_sstables_from(sharded<replica::database>& db, sstring ks
         lock_table(global_table, directory).get();
         sstables::sstable_directory::process_flags flags {
             .need_mutate_level = true,
-            .enable_dangerous_direct_import_of_cassandra_counters = db.local().get_config().enable_dangerous_direct_import_of_cassandra_counters(),
+            .enable_dangerous_direct_import_of_cassandra_counters = bool(allow_ddi),
             .allow_loading_materialized_view = false,
             .sort_sstables_according_to_owner = false,
             .sstable_open_config = cfg,
@@ -288,13 +288,15 @@ class table_populator {
     global_table_ptr& _global_table;
     std::vector<lw_shared_ptr<sharded<sstables::sstable_directory>>> _sstable_directories;
     sstables::sstable_version_types _version_for_reshaping = sstables::oldest_writable_sstable_format;
+    allow_dangerous_direct_import_of_cassandra_counters _allow_dangerous_import;
 
 public:
-    table_populator(global_table_ptr& ptr, sharded<replica::database>& db, sstring ks, sstring cf)
+    table_populator(global_table_ptr& ptr, sharded<replica::database>& db, sstring ks, sstring cf, allow_dangerous_direct_import_of_cassandra_counters allow_ddi)
         : _db(db)
         , _ks(std::move(ks))
         , _cf(std::move(cf))
         , _global_table(ptr)
+        , _allow_dangerous_import(allow_ddi)
     {
     }
 
@@ -376,7 +378,7 @@ future<> table_populator::process_subdir(sharded<sstables::sstable_directory>& d
 
     sstables::sstable_directory::process_flags flags {
         .throw_on_missing_toc = true,
-        .enable_dangerous_direct_import_of_cassandra_counters = _db.local().get_config().enable_dangerous_direct_import_of_cassandra_counters(),
+        .enable_dangerous_direct_import_of_cassandra_counters = bool(_allow_dangerous_import),
         .allow_loading_materialized_view = true,
         .garbage_collect = true,
         .sstable_open_config = {
@@ -440,7 +442,7 @@ future<> table_populator::populate_subdir(sharded<sstables::sstable_directory>& 
 }
 
 future<> distributed_loader::populate_keyspace(sharded<replica::database>& db,
-        sharded<db::system_keyspace>& sys_ks, keyspace& ks, sstring ks_name)
+        sharded<db::system_keyspace>& sys_ks, keyspace& ks, sstring ks_name, allow_dangerous_direct_import_of_cassandra_counters allow_ddi)
 {
     dblog.info("Populating Keyspace {}", ks_name);
 
@@ -452,7 +454,7 @@ future<> distributed_loader::populate_keyspace(sharded<replica::database>& db,
 
         dblog.info("Keyspace {}: Reading CF {} id={} version={} storage={}", ks_name, cfname, uuid, s->version(), cf.get_storage_options());
 
-        auto metadata = table_populator(gtable, db, ks_name, cfname);
+        auto metadata = table_populator(gtable, db, ks_name, cfname, allow_ddi);
         std::exception_ptr ex;
 
         try {
@@ -516,8 +518,8 @@ future<> distributed_loader::populate_keyspace(sharded<replica::database>& db,
     }
 }
 
-future<> distributed_loader::init_system_keyspace(sharded<db::system_keyspace>& sys_ks, sharded<locator::effective_replication_map_factory>& erm_factory, sharded<replica::database>& db) {
-    return seastar::async([&sys_ks, &erm_factory, &db] {
+future<> distributed_loader::init_system_keyspace(sharded<db::system_keyspace>& sys_ks, sharded<locator::effective_replication_map_factory>& erm_factory, sharded<replica::database>& db, allow_dangerous_direct_import_of_cassandra_counters allow_ddi) {
+    return seastar::async([&sys_ks, &erm_factory, &db, allow_ddi] {
         sys_ks.invoke_on_all([&erm_factory, &db] (auto& sys_ks) {
             return sys_ks.make(erm_factory.local(), db.local());
         }).get();
@@ -526,15 +528,15 @@ future<> distributed_loader::init_system_keyspace(sharded<db::system_keyspace>& 
             auto& ks = db.local().get_keyspaces();
             auto i = ks.find(ksname);
             if (i != ks.end()) {
-                distributed_loader::populate_keyspace(db, sys_ks, i->second, sstring(ksname)).get();
+                distributed_loader::populate_keyspace(db, sys_ks, i->second, sstring(ksname), allow_ddi).get();
             }
         }
     });
 }
 
 future<> distributed_loader::init_non_system_keyspaces(sharded<replica::database>& db,
-        sharded<service::storage_proxy>& proxy, sharded<db::system_keyspace>& sys_ks) {
-    return seastar::async([&db, &proxy, &sys_ks] {
+        sharded<service::storage_proxy>& proxy, sharded<db::system_keyspace>& sys_ks, allow_dangerous_direct_import_of_cassandra_counters allow_ddi) {
+    return seastar::async([&db, &proxy, &sys_ks, allow_ddi] {
         db.invoke_on_all([&proxy, &sys_ks] (replica::database& db) {
             return db.parse_system_tables(proxy, sys_ks);
         }).get();
@@ -561,7 +563,7 @@ future<> distributed_loader::init_non_system_keyspaces(sharded<replica::database
                     continue;
                 }
 
-                futures.emplace_back(distributed_loader::populate_keyspace(db, sys_ks, ks.second, ks_name));
+                futures.emplace_back(distributed_loader::populate_keyspace(db, sys_ks, ks.second, ks_name, allow_ddi));
             }
 
             when_all_succeed(futures.begin(), futures.end()).discard_result().get();

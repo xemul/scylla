@@ -769,12 +769,14 @@ future<> sstables_loader::load_new_sstables(sstring ks_name, sstring cf_name,
                 .load_bloom_filter = false,
                 .ignore_component_digest_mismatch = _db.local().get_config().ignore_component_digest_mismatch(),
             };
-            std::tie(table_id, sstables_on_shards) = co_await replica::distributed_loader::get_sstables_from_upload_dir(_db, ks_name, cf_name, cfg);
+            std::tie(table_id, sstables_on_shards) = co_await replica::distributed_loader::get_sstables_from_upload_dir(_db, ks_name, cf_name, cfg,
+                    replica::allow_dangerous_direct_import_of_cassandra_counters(_config.allow_dangerous_direct_import_of_cassandra_counters));
             co_await container().invoke_on_all([&sstables_on_shards, ks_name, cf_name, table_id, primary, scope] (sstables_loader& loader) mutable -> future<> {
                 co_await loader.load_and_stream(ks_name, cf_name, table_id, std::move(sstables_on_shards[this_shard_id()]), primary_replica_only(primary), true, scope, {});
             });
         } else {
-            co_await replica::distributed_loader::process_upload_dir(_db, _view_builder, _view_building_worker, ks_name, cf_name, skip_cleanup, skip_reshape);
+            co_await replica::distributed_loader::process_upload_dir(_db, _view_builder, _view_building_worker, ks_name, cf_name, skip_cleanup, skip_reshape,
+                    replica::allow_dangerous_direct_import_of_cassandra_counters(_config.allow_dangerous_direct_import_of_cassandra_counters));
         }
     } catch (...) {
         llog.warn("Done loading new SSTables for keyspace={}, table={}, load_and_stream={}, primary_replica_only={}, status=failed: {}",
@@ -900,7 +902,8 @@ future<> sstables_loader::download_task_impl::run() {
 
     auto ep_type = _loader.local()._storage_manager.get_endpoint_type(_endpoint);
     std::vector<seastar::abort_source> shard_aborts(smp::count);
-    auto [ table_id, sstables_on_shards ] = co_await replica::distributed_loader::get_sstables_from_object_store(_loader.local()._db, _ks, _cf, _sstables, _endpoint, ep_type, _bucket, _prefix, cfg, [&] {
+    auto [ table_id, sstables_on_shards ] = co_await replica::distributed_loader::get_sstables_from_object_store(_loader.local()._db, _ks, _cf, _sstables, _endpoint, ep_type, _bucket, _prefix, cfg,
+            replica::allow_dangerous_direct_import_of_cassandra_counters(_loader.local()._config.allow_dangerous_direct_import_of_cassandra_counters), [&] {
         return &shard_aborts[this_shard_id()];
     });
     llog.debug("Streaming sstables from {}({}/{})", _endpoint, _bucket, _prefix);

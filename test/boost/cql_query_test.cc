@@ -6157,7 +6157,8 @@ SEASTAR_TEST_CASE(test_sstable_load_mixed_generation_type) {
 
         // Load sstables with mixed generation types
         copy_directory("test/resource/sstables/mixed_generation_type", upload_dir);
-        replica::distributed_loader::process_upload_dir(e.db(), e.view_builder(), e.view_building_worker(), "ks", "test", false, false).get();
+        replica::distributed_loader::process_upload_dir(e.db(), e.view_builder(), e.view_building_worker(), "ks", "test", false, false,
+                replica::allow_dangerous_direct_import_of_cassandra_counters(false)).get();
 
         // Verify the expected data is present
         assert_that(e.execute_cql("SELECT * FROM ks.test").get()).is_rows()

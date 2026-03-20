@@ -1410,7 +1410,8 @@ To start the scylla server proper, simply invoke as: scylla server (or just scyl
             // done only by shard 0, so we'll no longer face race conditions as
             // described here: https://github.com/scylladb/scylla/issues/1014
             checkpoint(stop_signal, "loading system sstables");
-            replica::distributed_loader::init_system_keyspace(sys_ks, erm_factory, db).get();
+            replica::distributed_loader::init_system_keyspace(sys_ks, erm_factory, db,
+                replica::allow_dangerous_direct_import_of_cassandra_counters(cfg->enable_dangerous_direct_import_of_cassandra_counters())).get();
 
             utils::get_local_injector().inject("stop_after_init_of_system_ks",
                 [] { std::raise(SIGSTOP); });
@@ -1960,7 +1961,8 @@ To start the scylla server proper, simply invoke as: scylla server (or just scyl
             }
 
             checkpoint(stop_signal, "loading non-system sstables");
-            replica::distributed_loader::init_non_system_keyspaces(db, proxy, sys_ks).get();
+            replica::distributed_loader::init_non_system_keyspaces(db, proxy, sys_ks,
+                replica::allow_dangerous_direct_import_of_cassandra_counters(cfg->enable_dangerous_direct_import_of_cassandra_counters())).get();
 
             checkpoint(stop_signal, "recovering logstor");
             db.invoke_on_all([] (replica::database& db) {
