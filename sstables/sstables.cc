@@ -1107,7 +1107,7 @@ future<std::optional<uint32_t>> sstable::read_simple_with_digest(T& component) {
 }
 
 template <component_type Type, typename T>
-future<> sstable::read_simple_and_verify_digest(T& comp) {
+future<> sstable::read_simple_and_verify_digest(T& comp, bool ignore_digest_mismatch) {
     auto component_digest = get_component_digest(Type);
     if (component_digest) {
         auto computed_digest_opt = co_await read_simple_with_digest<Type>(comp);
@@ -1117,7 +1117,7 @@ future<> sstable::read_simple_and_verify_digest(T& comp) {
         } else {
             computed_digest = co_await compute_component_file_digest(Type);
         }
-        validate_component_digest(Type, computed_digest);
+        validate_component_digest(Type, computed_digest, ignore_digest_mismatch);
     } else {
         co_await read_simple<Type>(comp);
     }
@@ -1235,12 +1235,12 @@ future<uint32_t> sstable::compute_component_file_digest(file f, size_t size) con
     });
 }
 
-void sstable::validate_component_digest(component_type type, uint32_t computed_digest) const {
+void sstable::validate_component_digest(component_type type, uint32_t computed_digest, bool ignore) const {
     auto expected = get_component_digest(type);
     if (expected && *expected != computed_digest) {
         auto msg = fmt::format("{} digest mismatch in {}: expected {}, computed {}",
                                type, get_filename(), *expected, computed_digest);
-        if (_ignore_component_digest_mismatch) {
+        if (ignore) {
             sstlog.warn("{}", msg);
         } else {
             throw malformed_sstable_exception(msg);
@@ -1774,9 +1774,9 @@ future<> sstable::read_filter(sstable_open_config cfg) {
         return make_ready_future<>();
     }
 
-    return seastar::async([this] () mutable {
+    return seastar::async([this, ignore = cfg.ignore_component_digest_mismatch] () mutable {
         sstables::filter filter;
-        read_simple_and_verify_digest<component_type::Filter>(filter).get();
+        read_simple_and_verify_digest<component_type::Filter>(filter, ignore).get();
         auto nr_bits = filter.buckets.elements.size() * std::numeric_limits<typename decltype(filter.buckets.elements)::value_type>::digits;
         large_bitset bs(nr_bits, std::move(filter.buckets.elements));
         _components->filter = utils::filter::create_filter(filter.hashes, std::move(bs), get_filter_format(_version));
@@ -2001,7 +2001,7 @@ future<> sstable::load_metadata(sstable_open_config cfg) noexcept {
     co_await read_toc(cfg);
     // read scylla-meta after toc. Might need it to parse
     // rest (hint extensions)
-    co_await read_scylla_metadata();
+    co_await read_scylla_metadata(cfg.ignore_component_digest_mismatch);
     // Read statistics ahead of others - if summary is missing
     // we'll attempt to re-generate it and we need statistics for that
     co_await read_statistics();
@@ -2014,7 +2014,6 @@ future<> sstable::load_metadata(sstable_open_config cfg) noexcept {
 // This interface is only used during tests, snapshot loading and early initialization.
 // No need to set tunable priorities for it.
 future<> sstable::load(const dht::sharder& sharder, sstable_open_config cfg) noexcept {
-    _ignore_component_digest_mismatch = cfg.ignore_component_digest_mismatch;
     co_await load_metadata(cfg);
     validate_min_max_metadata();
     validate_max_local_deletion_time();
@@ -2262,23 +2261,23 @@ size_t summary_byte_cost(double summary_ratio) {
 }
 
 future<>
-sstable::read_scylla_metadata() noexcept {
+sstable::read_scylla_metadata(bool ignore_component_digest_mismatch) noexcept {
     if (_components->scylla_metadata) {
         return make_ready_future<>();
     }
-    return read_toc().then([this] {
+    return read_toc().then([this, ignore_component_digest_mismatch] {
         _components->scylla_metadata.emplace();  // engaged optional means we won't try to re-read this again
         if (!has_component(component_type::Scylla)) {
             return make_ready_future<>();
         }
-        return read_simple<component_type::Scylla>(*_components->scylla_metadata).then([this] -> future<>  {
+        return read_simple<component_type::Scylla>(*_components->scylla_metadata).then([this, ignore_component_digest_mismatch] -> future<>  {
             _features = _components->scylla_metadata->get_features();
             _components->digest = get_component_digest(component_type::Data);
 
-            validate_component_digest(component_type::TOC, _toc_digest);
+            validate_component_digest(component_type::TOC, _toc_digest, ignore_component_digest_mismatch);
 
             auto computed_digest = co_await compute_component_file_digest(component_type::Scylla);
-            validate_component_digest(component_type::Scylla, computed_digest);
+            validate_component_digest(component_type::Scylla, computed_digest, ignore_component_digest_mismatch);
         });
     });
 }

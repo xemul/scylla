@@ -635,7 +635,6 @@ private:
     // Total memory reclaimed so far from this sstable
     size_t _total_memory_reclaimed{0};
     bool _unlinked{false};
-    bool _ignore_component_digest_mismatch{false};
 
     // The mutate semaphore is used to serialize operations like rewrite_statistics
     // with linking or moving the sstable between directories.
@@ -659,7 +658,7 @@ private:
     template <component_type Type, typename T>
     future<std::optional<uint32_t>> read_simple_with_digest(T& comp);
     template <component_type Type, typename T>
-    future<> read_simple_and_verify_digest(T& comp);
+    future<> read_simple_and_verify_digest(T& comp, bool ignore_digest_mismatch);
     future<> do_read_simple(component_type type,
                             noncopyable_function<future<> (version_types, file&&, uint64_t sz)> read_component);
     // this variant closes the file on parse completion
@@ -699,7 +698,7 @@ private:
     future<> read_compression();
     void write_compression();
 
-    future<> read_scylla_metadata() noexcept;
+    future<> read_scylla_metadata(bool ignore_component_digest_mismatch = false) noexcept;
 
     void write_scylla_metadata(shard_id shard,
                                run_identifier identifier,
@@ -745,7 +744,7 @@ private:
     // and so max_local_deletion_time should be discarded for those.
     void validate_max_local_deletion_time();
     void validate_partitioner();
-    void validate_component_digest(component_type type, uint32_t computed_digest) const;
+    void validate_component_digest(component_type type, uint32_t computed_digest, bool ignore) const;
     future<> validate_index_digest() const;
     future<uint32_t> compute_component_file_digest(component_type type) const;
     future<uint32_t> compute_component_file_digest(file f, size_t size) const;
