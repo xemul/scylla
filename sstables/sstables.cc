@@ -2074,12 +2074,12 @@ entry_descriptor sstable::get_descriptor(component_type c) const {
 }
 
 future<>
-sstable::load_owner_shards(const dht::sharder& sharder) {
+sstable::load_owner_shards(const dht::sharder& sharder, bool ignore_component_digest_mismatch) {
     if (!_shards.empty()) {
         sstlog.trace("{}: shards={}", get_filename(), _shards);
         co_return;
     }
-    co_await read_scylla_metadata();
+    co_await read_scylla_metadata(ignore_component_digest_mismatch);
 
     auto has_valid_sharding_metadata = std::invoke([this] {
         if (!has_component(component_type::Scylla)) {

@@ -261,7 +261,7 @@ public:
 
     // Load set of shards that own the SSTable, while reading the minimum
     // from disk to achieve that.
-    future<> load_owner_shards(const dht::sharder& sharder);
+    future<> load_owner_shards(const dht::sharder& sharder, bool ignore_component_digest_mismatch = false);
 
     // Call as the last method before the object is destroyed.
     // No other uses of the object can happen at this point.
