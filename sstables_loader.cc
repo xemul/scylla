@@ -951,7 +951,8 @@ sstables_loader::sstables_loader(sharded<replica::database>& db,
         sharded<db::view::view_building_worker>& vbw,
         tasks::task_manager& tm,
         sstables::storage_manager& sstm,
-        seastar::scheduling_group sg)
+        seastar::scheduling_group sg,
+        config cfg)
     : _db(db)
     , _ss(ss)
     , _messaging(messaging)
@@ -960,6 +961,7 @@ sstables_loader::sstables_loader(sharded<replica::database>& db,
     , _task_manager_module(make_shared<task_manager_module>(tm))
     , _storage_manager(sstm)
     , _sched_group(std::move(sg))
+    , _config(std::move(cfg))
 {
     tm.register_module("sstables_loader", _task_manager_module);
 }

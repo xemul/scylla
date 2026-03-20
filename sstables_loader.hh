@@ -66,6 +66,10 @@ struct stream_progress {
 // system. Built on top of the distributed_loader functionality.
 class sstables_loader : public seastar::peering_sharded_service<sstables_loader> {
 public:
+    struct config {
+        bool allow_dangerous_direct_import_of_cassandra_counters = false;
+    };
+
     enum class stream_scope { all, dc, rack, node };
     class task_manager_module : public tasks::task_manager::module {
         public:
@@ -81,6 +85,7 @@ private:
     shared_ptr<task_manager_module> _task_manager_module;
     sstables::storage_manager& _storage_manager;
     seastar::scheduling_group _sched_group;
+    config _config;
 
     // Note that this is obviously only valid for the current shard. Users of
     // this facility should elect a shard to be the coordinator based on any
@@ -104,7 +109,8 @@ public:
             sharded<db::view::view_building_worker>& vbw,
             tasks::task_manager& tm,
             sstables::storage_manager& sstm,
-            seastar::scheduling_group sg);
+            seastar::scheduling_group sg,
+            config cfg = {});
 
     future<> stop();
 
