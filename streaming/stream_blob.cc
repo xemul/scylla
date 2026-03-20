@@ -54,7 +54,7 @@ static future<> load_sstable_for_tablet(const file_stream_id& ops_id, replica::d
         auto& sstm = t.get_sstables_manager();
         auto sst = sstm.make_sstable(t.schema(), t.get_storage_options(), desc.generation, state, desc.version, desc.format);
         sstables::sstable_open_config cfg { .unsealed_sstable = true,
-                                               .ignore_component_digest_mismatch = db.get_config().ignore_component_digest_mismatch() };
+                                               .ignore_component_digest_mismatch = sstm.get_config().ignore_component_digest_mismatch };
         co_await sst->load(erm->get_sharder(*t.schema()), cfg);
         auto on_add = [sst, &sstm] (sstables::shared_sstable loading_sst) -> future<> {
             if (loading_sst == sst) {

@@ -238,6 +238,7 @@ void sstable_directory::validate(sstables::shared_sstable sst, process_flags fla
 
 future<sstables::shared_sstable> sstable_directory::load_sstable(sstables::entry_descriptor desc,
         const data_dictionary::storage_options& storage_opts, sstables::sstable_open_config cfg) const {
+    cfg.ignore_component_digest_mismatch = _manager.get_config().ignore_component_digest_mismatch;
     shared_sstable sst = _manager.make_sstable(_schema, storage_opts, desc.generation, _state, desc.version, desc.format, db_clock::now(), _error_handler_gen);
     co_await sst->load(_sharder, cfg);
     co_return sst;
