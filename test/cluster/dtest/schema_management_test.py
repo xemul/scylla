@@ -270,7 +270,18 @@ class TestSchemaManagement(Tester):
             rows = session.execute(SimpleStatement("SELECT * FROM ks.cf LIMIT 1;", consistency_level=ConsistencyLevel.QUORUM))
             assert len(rows_to_list(rows)[0]) == col_mun, f"Expected {col_mun} columns but got rows:{rows} instead"
             for key in range(10):
-                query_c1c2(session=session, key=key, consistency=ConsistencyLevel.QUORUM)
+                logger.debug(f"Querying key k{key}")
+                try:
+                    query_c1c2(session=session, key=key, consistency=ConsistencyLevel.QUORUM)
+                except AssertionError:
+                    all_rows = rows_to_list(session.execute(SimpleStatement("SELECT * FROM ks.cf;", consistency_level=ConsistencyLevel.QUORUM)))
+                    logger.error(f"Key k{key} not found via QUORUM. All rows in ks.cf: {all_rows}")
+                    for node, node_name in [(node1, "node1"), (node2, "node2"), (node3, "node3")]:
+                        node_session = self.patient_exclusive_cql_connection(node)
+                        node_rows = rows_to_list(node_session.execute(SimpleStatement(
+                            f"SELECT * FROM ks.cf WHERE key='k{key}';", consistency_level=ConsistencyLevel.ONE)))
+                        logger.error(f"  {node_name} ({node.address()}) has key k{key}: {node_rows}")
+                    raise
 
         expected_case_result_map = {
             "create_table": functools.partial(create_or_alter_table_expected_result, 3),
