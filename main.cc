@@ -1138,6 +1138,7 @@ To start the scylla server proper, simply invoke as: scylla server (or just scyl
 #endif
 
             seastar::scheduling_supergroup user_ssg = create_scheduling_supergroup(1000).get();
+            smp::invoke_on_all([user_ssg] { user_ssg.mark_as_io_priority_lane(); }).get();
 
             // Note: changed from using a move here, because we want the config object intact.
             replica::database_config dbcfg;
