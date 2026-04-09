@@ -642,12 +642,6 @@ async def mark_all_logs(manager, servers):
         log_marks[s.server_id] = (log, await log.mark())
     return log_marks
 
-def create_schema(ks, cf, min_tablet_count=None):
-    schema = f"CREATE TABLE {ks}.{cf} ( pk text primary key, value int )"
-    if min_tablet_count is not None:
-        schema += f" WITH tablets = {{'min_tablet_count': {min_tablet_count}}}"
-    schema += ';'
-    return schema
 
 
 class SSTablesOnObjectStorage:
@@ -703,7 +697,7 @@ async def do_test_streaming_scopes(build_mode: str, manager: ManagerClient, topo
     restored_min_tablet_counts = [original_min_tablet_count] if (build_mode == 'debug' or sstables_storage.object_storage is None) else [2, original_min_tablet_count, 10]
     
     async with new_test_keyspace(manager, f"WITH replication = {{'class': 'NetworkTopologyStrategy', 'replication_factor': {topology.rf}}}") as ks:
-        await cql.run_async(create_schema(ks, 'test', min_tablet_count=original_min_tablet_count))
+        await cql.run_async(f"CREATE TABLE {ks}.test ( pk text primary key, value int ) WITH tablets = {{'min_tablet_count': {original_min_tablet_count}}};")
         insert_stmt = cql.prepare(f"INSERT INTO {ks}.test (pk, value) VALUES (?, ?)")
         insert_stmt.consistency_level = ConsistencyLevel.ALL
         await asyncio.gather(*(cql.run_async(insert_stmt, (str(i), i)) for i in range(num_keys)))
@@ -727,7 +721,7 @@ async def do_test_streaming_scopes(build_mode: str, manager: ManagerClient, topo
             continue
 
         async with new_test_keyspace(manager, f"WITH replication = {{'class': 'NetworkTopologyStrategy', 'replication_factor': {topology.rf}}}") as ks:
-            await cql.run_async(create_schema(ks, 'test', min_tablet_count=restored_min_tablet_count))
+            await cql.run_async(f"CREATE TABLE {ks}.test ( pk text primary key, value int ) WITH tablets = {{'min_tablet_count': {restored_min_tablet_count}}};")
 
             log_marks = await mark_all_logs(manager, servers)
 
@@ -887,7 +881,7 @@ async def test_restore_primary_replica(manager: ManagerClient, object_storage, d
     cql = manager.get_cql()
 
     async with new_test_keyspace(manager, replication_str) as ks:
-        cql.execute(create_schema(ks, cf))
+        cql.execute(f"CREATE TABLE {ks}.{cf} ( pk text primary key, value int );")
         stmt = cql.prepare(f"INSERT INTO {ks}.{cf} ( pk, value ) VALUES (?, ?)")
         stmt.consistency_level = ConsistencyLevel.ALL
         await asyncio.gather(*(cql.run_async(stmt, (str(k), k)) for k in keys))
@@ -901,7 +895,7 @@ async def test_restore_primary_replica(manager: ManagerClient, object_storage, d
         await asyncio.gather(*(do_backup(s, snap_name, prefix, ks, cf, object_storage, manager, logger) for s in servers))
 
     async with new_test_keyspace(manager, replication_str) as ks:
-        cql.execute(create_schema(ks, cf))
+        cql.execute(f"CREATE TABLE {ks}.{cf} ( pk text primary key, value int );")
 
         await asyncio.gather(*(do_restore_server(manager, logger, ks, cf, s, sstables[s], scope, True, prefix, object_storage) for s in servers))
 
