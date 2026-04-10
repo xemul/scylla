@@ -1199,11 +1199,8 @@ void database::add_column_family(keyspace& ks, schema_ptr schema, column_family:
     }
 
     if (schema->logstor_enabled()) {
-        if (!_cfg.enable_logstor()) {
-            throw std::runtime_error(fmt::format("The table {}.{} is using logstor storage but logstor is not enabled in the configuration", schema->ks_name(), schema->cf_name()));
-        }
         if (!_logstor) {
-            on_internal_error(dblog, "The table is using logstor but logstor is not initialized");
+            throw std::runtime_error(fmt::format("The table {}.{} is using logstor storage but logstor is not initialized", schema->ks_name(), schema->cf_name()));
         }
         cf->init_logstor(_logstor.get());
         dblog.info0("Table {}.{} is using logstor storage", schema->ks_name(), schema->cf_name());
@@ -2725,7 +2722,7 @@ future<> database::start(sharded<qos::service_level_controller>& sl_controller, 
         _compaction_manager.enable();
     }
     co_await init_commitlog();
-    if (_cfg.enable_logstor()) {
+    if (_cfg.check_experimental(db::experimental_features_t::feature::LOGSTOR)) {
         co_await init_logstor();
     }
 }

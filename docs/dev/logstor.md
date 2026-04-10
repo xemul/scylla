@@ -68,11 +68,9 @@ The `buffered_writer` manages multiple write buffers for user writes, an active 
 
 ### Enabling Logstor
 
-To use logstor, enable it in the configuration:
+To use logstor, enable the experimental feature in the configuration:
 
 ```yaml
-enable_logstor: true
-
 experimental_features:
   - logstor
 ```

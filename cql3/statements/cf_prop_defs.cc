@@ -206,9 +206,6 @@ void cf_prop_defs::validate(const data_dictionary::database db, sstring ks_name,
             if (!db.features().logstor) {
                 throw exceptions::configuration_exception(format("The experimental feature 'logstor' must be enabled in order to use the 'logstor' storage engine."));
             }
-            if (!db.get_config().enable_logstor()) {
-                throw exceptions::configuration_exception(format("The configuration option 'enable_logstor' must be set to true in the configuration in order to use the 'logstor' storage engine."));
-            }
         } else {
             throw exceptions::configuration_exception(format("Illegal value for '{}'", KW_STORAGE_ENGINE));
         }

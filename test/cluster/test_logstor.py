@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.asyncio
 async def test_property(manager: ManagerClient):
     cmdline = ['--logger-log-level', 'logstor=debug']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -40,9 +40,26 @@ async def test_property(manager: ManagerClient):
             await cql.run_async(f"CREATE TABLE {ks}.t_enabled (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH storage_engine = 'logstor'")
 
 @pytest.mark.asyncio
+async def test_config_option_consistency(manager: ManagerClient):
+    """
+    Test that logstor storage engine requires the experimental 'logstor' feature to be enabled.
+    Without the feature flag, users cannot create logstor tables.
+    """
+    cmdline = ['--logger-log-level', 'logstor=debug']
+    # Logstor feature is NOT enabled
+    cfg = {'experimental_features': []}
+    await manager.servers_add(1, cmdline=cmdline, config=cfg)
+    cql = manager.get_cql()
+
+    async with new_test_keyspace(manager, "") as ks:
+        # Should fail because logstor feature is not enabled
+        with pytest.raises(ConfigurationException, match="The experimental feature 'logstor' must be enabled"):
+            await cql.run_async(f"CREATE TABLE {ks}.t_logstor (pk int PRIMARY KEY, v int) WITH storage_engine = 'logstor'")
+
+@pytest.mark.asyncio
 async def test_basic_write_and_read(manager: ManagerClient):
     cmdline = ['--logger-log-level', 'logstor=debug']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -86,7 +103,7 @@ async def test_basic_write_and_read(manager: ManagerClient):
 @pytest.mark.asyncio
 async def test_range_read(manager: ManagerClient):
     cmdline = ['--logger-log-level', 'logstor=debug']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -114,7 +131,7 @@ async def test_range_read(manager: ManagerClient):
 @pytest.mark.asyncio
 async def test_parallel_writes(manager: ManagerClient):
     cmdline = ['--logger-log-level', 'logstor=debug']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -133,7 +150,7 @@ async def test_parallel_writes(manager: ManagerClient):
 @pytest.mark.asyncio
 async def test_overwrites(manager: ManagerClient):
     cmdline = ['--logger-log-level', 'logstor=debug']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -156,7 +173,7 @@ async def test_parallel_big_writes(manager: ManagerClient):
     Perform multiple writes in parallel with large values and validate to test segment switching.
     """
     cmdline = ['--logger-log-level', 'logstor=debug', '--smp=1']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -192,7 +209,7 @@ async def test_recovery_basic(manager: ManagerClient, fail_separator_flush: bool
     6. Performs additional writes and reads to verify system continues functioning
     """
     cmdline = ['--logger-log-level', 'logstor=trace']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     servers = await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -282,7 +299,6 @@ async def test_recovery_with_segment_reuse(manager: ManagerClient):
 
     cmdline = ['--logger-log-level', 'logstor=trace', '--smp=1']
     cfg = {
-        'enable_logstor': True,
         'logstor_disk_size_in_mb': disk_size_mb,
         'logstor_file_size_in_mb': file_size_mb,
         'experimental_features': ['logstor']
@@ -337,7 +353,7 @@ async def test_compaction(manager: ManagerClient):
     Test log compaction by creating dead data and verifying space reclamation.
     """
     cmdline = ['--logger-log-level', 'logstor=trace', '--smp=1']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     servers = await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -378,7 +394,7 @@ async def test_drop_table(manager: ManagerClient):
     Test that DROP TABLE works properly with logstor tables.
     """
     cmdline = ['--logger-log-level', 'logstor=trace']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     servers = await manager.servers_add(1, cmdline=cmdline, config=cfg)
     cql = manager.get_cql()
 
@@ -449,7 +465,6 @@ async def test_trigger_separator_flush(manager: ManagerClient):
 
     cmdline = ['--logger-log-level', 'logstor=debug', '--smp=1']
     cfg = {
-        'enable_logstor': True,
         'logstor_disk_size_in_mb': disk_size_mb,
         'logstor_file_size_in_mb': file_size_mb,
         'experimental_features': ['logstor']
@@ -495,7 +510,6 @@ async def test_tablet_split_trigger_by_size(manager: ManagerClient):
     ]
     cfg = {
         'tablet_load_stats_refresh_interval_in_seconds': 1,
-        'enable_logstor': True,
         'experimental_features': ['logstor'],
     }
     servers = [await manager.server_add(cmdline=cmdline, config=cfg)]
@@ -541,7 +555,7 @@ async def test_tablet_split_and_merge(manager: ManagerClient):
     ]
     cfg = {
         'tablet_load_stats_refresh_interval_in_seconds': 1,
-        'enable_logstor': True, 'experimental_features': ['logstor']
+        'experimental_features': ['logstor']
     }
     servers = [await manager.server_add(config=cfg, cmdline=cmdline)]
 
@@ -598,7 +612,7 @@ async def test_tablet_migration(manager: ManagerClient):
     Test tablet migration
     """
     cmdline = ['--logger-log-level', 'logstor=trace', '--logger-log-level', 'stream_blob=trace','--smp=1']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     s1 = await manager.server_add(cmdline=cmdline, config=cfg, property_file={"dc": "dc1", "rack": "rack1"})
     servers = [s1]
     cql, hosts = await manager.get_ready_cql(servers)
@@ -634,7 +648,7 @@ async def test_tablet_intranode_migration(manager: ManagerClient):
     Test tablet intranode migration
     """
     cmdline = ['--logger-log-level', 'logstor=trace', '--logger-log-level', 'stream_blob=trace','--smp=2']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     s1 = await manager.server_add(cmdline=cmdline, config=cfg, property_file={"dc": "dc1", "rack": "rack1"})
     servers = [s1]
     cql, _ = await manager.get_ready_cql(servers)
@@ -686,7 +700,7 @@ async def test_tablet_migration_with_compaction(manager: ManagerClient):
     8. Verifies all data is correct on the destination after migration
     """
     cmdline = ['--logger-log-level', 'logstor=trace', '--logger-log-level', 'stream_blob=trace', '--smp=2']
-    cfg = {'enable_logstor': True, 'experimental_features': ['logstor']}
+    cfg = {'experimental_features': ['logstor']}
     s1 = await manager.server_add(cmdline=cmdline, config=cfg, property_file={"dc": "dc1", "rack": "rack1"})
     servers = [s1]
     cql, _ = await manager.get_ready_cql(servers)
