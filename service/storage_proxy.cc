@@ -3337,6 +3337,7 @@ storage_proxy::storage_proxy(sharded<replica::database>& db, storage_proxy::conf
     , _hints_for_views_manager(*this, _db.local().get_config().view_hints_directory(), {}, _db.local().get_config().max_hint_window_in_ms(), _hints_resource_manager, _db, cfg.hints_sched_group)
     , _stats_key(stats_key)
     , _features(feat)
+    , _maintenance_mode(cfg.maintenance_mode)
     , _background_write_throttle_threahsold(cfg.available_memory / 10)
     , _mutate_stage{"storage_proxy_mutate", &storage_proxy::do_mutate}
     , _max_view_update_backlog(max_view_update_backlog)
@@ -7103,7 +7104,7 @@ host_id_vector_replica_set storage_proxy::get_endpoints_for_reading(const schema
     auto endpoints = erm.get_replicas_for_reading(token);
     // Skip for non-debug builds and maintenance mode.
     if constexpr (tools::build_info::is_debug_build()) {
-        if (!_db.local().get_config().maintenance_mode()) {
+        if (!_maintenance_mode) {
             validate_read_replicas(erm, endpoints);
         }
     }
