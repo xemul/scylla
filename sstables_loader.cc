@@ -1198,8 +1198,10 @@ protected:
 
 future<tasks::task_id> sstables_loader::restore_tablets(table_id tid, sstring keyspace, sstring table, sstring snap_name, sstring endpoint, sstring bucket, utils::chunked_vector<sstring> manifests) {
     auto tablet_count = co_await populate_snapshot_sstables_from_manifests(_storage_manager, _sys_dist_ks, keyspace, table, endpoint, bucket, snap_name, std::move(manifests));
-    auto schema = _db.local().find_schema(tid);
-    co_await replica::alter_table_with_tablet_hints(schema, _sys_dist_ks.get_storage_proxy(), _sys_dist_ks.get_migration_manager(), _ss.local(), tablet_count, tablet_count);
+    co_await container().invoke_on(0, [tid, tablet_count] (auto& sl) {
+        auto schema = sl._db.local().find_schema(tid);
+        return replica::alter_table_with_tablet_hints(schema, sl._sys_dist_ks.get_storage_proxy(), sl._sys_dist_ks.get_migration_manager(), sl._ss.local(), tablet_count, tablet_count);
+    });
     auto task = co_await _task_manager_module->make_and_start_task<tablet_restore_task_impl>({}, container(), keyspace, tid, std::move(snap_name), std::move(endpoint), std::move(bucket));
     co_return task->id();
 }
